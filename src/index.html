@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="color-scheme" content="light dark">
+  <title>ephe</title>
+  <link rel="icon" href="/logo.png" type="image/png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="role-desktop loading">
+  <header class="topbar">
+    <span class="brand">ephe</span>
+    <span class="status" id="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span>
+      <span class="label" id="status-label">waiting</span>
+    </span>
+  </header>
+
+  <main id="app">
+    <section class="qr-panel" id="qr-panel" aria-label="QR code">
+      <div class="qr-card">
+        <img id="qr" src="/qr" alt="" width="180" height="180" decoding="async">
+      </div>
+      <p class="hint" id="caption">scan to connect a phone</p>
+      <div id="reset-panel" hidden>
+        <button id="reset-btn" type="button" class="btn">start new session</button>
+      </div>
+    </section>
+
+    <section class="editor-panel">
+      <textarea id="editor"
+                spellcheck="false"
+                autocapitalize="off"
+                autocorrect="off"
+                autocomplete="off"
+                translate="no"
+                inputmode="text"
+                enterkeyhint="done"
+                aria-label="shared text"></textarea>
+      <p class="footer-hint" id="footer-hint">start typing — text syncs instantly</p>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+# Rust / Cargo
+/target/
+Cargo.lock.bak
+
+# Build artifacts
+*.ico
+*.exe
+!installer/.gitkeep
+
+# NSIS build inputs (copied from repo, only needed at build time)
+/installer/ephe.exe
+/installer/Logo.png
+
+# Release artifacts
+/release/
+
+# Internal session notes (gitignored per request)
+/other-docs/
+
+# Log files and stray outputs
+*.log
+*.tmp
+*.bak
+
+# IDE / OS noise
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Local NSIS build
+/ephe-setup.exe
+
+# Python test cache
+__pycache__/
