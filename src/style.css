@@ -19,8 +19,18 @@
   --font-mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "Consolas", monospace;
 }
 
+:root[data-theme="dark"] {
+  --bg: #0a0a0a;
+  --fg: #f2f2f2;
+  --muted: #8a8a8a;
+  --faint: #555555;
+  --line: #1d1d1d;
+  --line-strong: #2a2a2a;
+  --accent: #f2f2f2;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #0a0a0a;
     --fg: #f2f2f2;
     --muted: #8a8a8a;
@@ -76,12 +86,34 @@ body:not(.loading) main {
   flex: 0 0 auto;
 }
 
-.brand {
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  font-size: 17px;
-  color: var(--fg);
+.brand img {
+  display: block;
+  height: 20px;
+  width: auto;
+  filter: invert(1); /* white text-logo on light header */
 }
+
+:root[data-theme="dark"] .brand img { filter: none; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .brand img { filter: none; }
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+body.role-desktop:not(.qr-collapsed) .top-copy,
+body.role-desktop:not(.qr-collapsed) .top-paste,
+body.role-desktop:not(.qr-collapsed) .top-clear,
+body.role-desktop:not(.qr-collapsed) .top-reset { display: none; }
+
+body.role-desktop.qr-collapsed .actions,
+body.role-desktop.qr-collapsed .qr-panel { display: none; }
+
+body.role-mobile #collapse-btn { display: none; }
 
 .status {
   display: inline-flex;
@@ -216,19 +248,36 @@ body.role-mobile .editor-panel { border-top: 0; }
   background: var(--line-strong);
 }
 
-.footer-hint {
-  margin: 0;
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
   padding: 10px var(--space-lg) calc(env(safe-area-inset-bottom, 0px) + 14px);
-  font-size: 11.5px;
-  color: var(--muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   border-top: 1px solid var(--line);
   background: var(--bg);
   flex: 0 0 auto;
 }
 
-body.role-mobile .footer-hint { display: none; }
+.footer-hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.footer-count {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+body.role-mobile .footer { display: none; }
 
 .footer-hint kbd {
   font-family: var(--font-mono);
@@ -242,13 +291,16 @@ body.role-mobile .footer-hint { display: none; }
   text-transform: none;
 }
 
-/* ---------- reset button ---------- */
+/* ---------- action buttons ---------- */
 
-#reset-panel {
-  margin-top: var(--space-sm);
+.actions {
   display: flex;
   justify-content: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
 }
+
+body.role-mobile .actions { display: none; }
 
 .btn {
   appearance: none;
@@ -277,7 +329,8 @@ body.role-mobile .footer-hint { display: none; }
   outline-offset: 2px;
 }
 
-body.role-mobile #reset-panel { display: none; }
+.btn-sm { padding: 6px 10px; font-size: 12px; }
+.btn-icon { padding: 6px 9px; line-height: 1; }
 
 /* when session is in error state, dim the QR so the reset button reads as the call to action */
 .status[data-state="error"] ~ * .qr-card {

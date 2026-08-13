@@ -10,6 +10,7 @@ Cargo.lock.bak
 # NSIS build inputs (copied from repo, only needed at build time)
 /installer/ephe.exe
 /installer/Logo.png
+/installer/text-logo.png
 
 # Release artifacts
 /release/

@@ -13,12 +13,9 @@ Set-Location $PSScriptRoot\..
 Write-Host "==> cargo build --release"
 cargo build --release
 
-if (-not (Test-Path "installer\ephe.exe")) {
-    Copy-Item "target\release\ephe.exe" "installer\ephe.exe" -Force
-}
-if (-not (Test-Path "installer\Logo.png")) {
-    Copy-Item "Logo.png" "installer\Logo.png" -Force
-}
+Copy-Item "target\release\ephe.exe" "installer\ephe.exe" -Force
+Copy-Item "Logo.png" "installer\Logo.png" -Force
+Copy-Item "text-logo.png" "installer\text-logo.png" -Force
 
 Write-Host "==> makensis"
 Set-Location installer
@@ -28,7 +25,8 @@ Set-Location ..
 Write-Host "==> packing portable"
 New-Item -ItemType Directory -Path "release" -Force | Out-Null
 Copy-Item "Logo.png" "release\Logo.png" -Force
-Compress-Archive -Path "target\release\ephe.exe", "release\Logo.png" `
+Copy-Item "text-logo.png" "release\text-logo.png" -Force
+Compress-Archive -Path "target\release\ephe.exe", "release\Logo.png", "release\text-logo.png" `
                  -DestinationPath "release\ephe-portable.zip" -Force
 
 Write-Host "==> SHA256SUMS"

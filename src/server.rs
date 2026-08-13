@@ -40,6 +40,7 @@ pub fn build_router(
         .route("/style.css", get(css))
         .route("/app.js", get(js))
         .route("/logo.png", get(logo))
+        .route("/text-logo.png", get(text_logo))
         .route("/qr", get(qr))
         .route("/reset", post(reset))
         .route("/ws", get(ws))
@@ -80,8 +81,8 @@ async fn qr(axum::extract::State(state): axum::extract::State<Arc<AppState>>) ->
     ([("content-type", "image/svg+xml")], svg).into_response()
 }
 
-async fn logo() -> Response {
-    let path = find_logo();
+async fn text_logo() -> Response {
+    let path = find_named("text-logo.png");
     match path {
         Some(p) => match std::fs::read(&p) {
             Ok(bytes) => ([("content-type", "image/png")], bytes).into_response(),
@@ -91,17 +92,26 @@ async fn logo() -> Response {
     }
 }
 
-fn find_logo() -> Option<PathBuf> {
+async fn logo() -> Response {
+    let path = find_named("Logo.png");
+    match path {
+        Some(p) => match std::fs::read(&p) {
+            Ok(bytes) => ([("content-type", "image/png")], bytes).into_response(),
+            Err(_) => StatusCode::NOT_FOUND.into_response(),
+        },
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+fn find_named(name: &str) -> Option<PathBuf> {
     let candidates = [
         std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())),
         std::env::current_dir().ok(),
     ];
     for base in candidates.into_iter().flatten() {
-        for name in ["Logo.png", "logo.png", "logo.PNG"] {
-            let p = base.join(name);
-            if p.is_file() {
-                return Some(p);
-            }
+        let p = base.join(name);
+        if p.is_file() {
+            return Some(p);
         }
     }
     None

@@ -13,8 +13,132 @@ const statusLabel = document.getElementById("status-label");
 const captionEl = document.getElementById("caption");
 const editor = document.getElementById("editor");
 const footerHint = document.getElementById("footer-hint");
-const resetPanel = document.getElementById("reset-panel");
-const resetBtn = document.getElementById("reset-btn");
+const footerCount = document.getElementById("footer-count");
+const collapseBtn = document.getElementById("collapse-btn");
+
+// ---------- char/word counter ----------
+
+function updateCounter() {
+  if (!footerCount) return;
+  const t = editor.value;
+  const words = t.trim() ? t.trim().split(/\s+/).length : 0;
+  footerCount.textContent = `${t.length} chars · ${words} words`;
+}
+
+// ---------- collapse the QR panel (desktop) ----------
+
+function setCollapsed(c) {
+  document.body.classList.toggle("qr-collapsed", c);
+  if (collapseBtn) collapseBtn.textContent = c ? "show qr" : "hide qr";
+}
+
+if (collapseBtn) {
+  collapseBtn.addEventListener("click", () => {
+    setCollapsed(!document.body.classList.contains("qr-collapsed"));
+  });
+}
+
+// ---------- theme toggle (per-device, stored in this browser's localStorage) ----------
+
+const themeBtn = document.getElementById("theme-btn");
+
+function effectiveTheme() {
+  if (document.documentElement.dataset.theme) return document.documentElement.dataset.theme;
+  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function setTheme(t, persist) {
+  document.documentElement.dataset.theme = t;
+  if (persist) localStorage.setItem("ephe-theme", t);
+  themeBtn.textContent = t === "dark" ? "\u2600" : "\u263E";
+  themeBtn.setAttribute("aria-label", t === "dark" ? "switch to light theme" : "switch to dark theme");
+  document.querySelector('meta[name="theme-color"]').setAttribute("content", t === "dark" ? "#0a0a0a" : "#ffffff");
+}
+
+if (themeBtn) {
+  themeBtn.addEventListener("click", () => {
+    setTheme(effectiveTheme() === "dark" ? "light" : "dark", true);
+  });
+  const saved = localStorage.getItem("ephe-theme");
+  if (saved) {
+    setTheme(saved, true);
+  } else {
+    // no saved choice: follow the system, no attribute so media query stays live
+    const t = effectiveTheme();
+    themeBtn.textContent = t === "dark" ? "\u2600" : "\u263E";
+    themeBtn.setAttribute("aria-label", t === "dark" ? "switch to light theme" : "switch to dark theme");
+    document.querySelector('meta[name="theme-color"]').setAttribute("content", t === "dark" ? "#0a0a0a" : "#ffffff");
+  }
+}
+
+// ---------- copy / paste ----------
+
+function flash(btn, label) {
+  const original = btn.textContent;
+  btn.textContent = label;
+  setTimeout(() => { btn.textContent = original; }, 1200);
+}
+
+function insertAtCursor(text) {
+  const start = editor.selectionStart, end = editor.selectionEnd;
+  editor.value = editor.value.slice(0, start) + text + editor.value.slice(end);
+  const pos = start + text.length;
+  editor.setSelectionRange(pos, pos);
+  editor.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+async function copyText(btn) {
+  const text = editor.value;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // ponytail: execCommand fallback for non-secure contexts (http://lan-ip)
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  flash(btn, "copied!");
+}
+
+async function pasteText(btn) {
+  if (editor.readOnly) return;
+  let text = null;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch {
+    text = window.prompt("paste text below:");
+  }
+  if (!text) return;
+  insertAtCursor(text);
+  flash(btn, "pasted!");
+}
+
+for (const btn of document.querySelectorAll(".top-copy, #copy-btn")) {
+  btn.addEventListener("click", () => copyText(btn));
+}
+for (const btn of document.querySelectorAll(".top-paste, #paste-btn")) {
+  btn.addEventListener("click", () => pasteText(btn));
+}
+
+// ---------- clear ----------
+
+function clearText(btn) {
+  if (editor.readOnly || !editor.value) return;
+  editor.value = "";
+  editor.setSelectionRange(0, 0);
+  editor.dispatchEvent(new Event("input", { bubbles: true }));
+  flash(btn, "cleared!");
+}
+
+for (const btn of document.querySelectorAll(".top-clear, #clear-btn")) {
+  btn.addEventListener("click", () => clearText(btn));
+}
 
 const COPY_KEY = isMac ? "\u2318" : "Ctrl";
 
@@ -35,10 +159,11 @@ function setStatus(state, label) {
 }
 
 function showReset() {
-  if (isDesktop && resetPanel) resetPanel.hidden = false;
+  if (!isDesktop) return; // QR (and new sessions) live on the desktop only
+  for (const b of document.querySelectorAll(".reset-btn")) b.hidden = false;
 }
 
-if (resetBtn) {
+for (const resetBtn of document.querySelectorAll(".reset-btn")) {
   resetBtn.addEventListener("click", async () => {
     if (resetBtn.disabled) return;
     resetBtn.disabled = true;
@@ -77,6 +202,7 @@ ws.addEventListener("message", (ev) => {
       editor.value = msg.text || "";
       lastSent = editor.value;
       applying = false;
+      updateCounter();
       if (isDesktop) editor.focus({ preventScroll: true });
       break;
     case "text":
@@ -90,6 +216,7 @@ ws.addEventListener("message", (ev) => {
       editor.setSelectionRange(len, len);
       lastSent = editor.value;
       applying = false;
+      updateCounter();
       break;
     case "peer_joined":
       setStatus("connected", "connected");
@@ -123,6 +250,7 @@ ws.addEventListener("error", () => {
 
 let sendTimer = null;
 editor.addEventListener("input", () => {
+  updateCounter();
   if (applying) return;
   if (editor.value === lastSent) return;
   lastSent = editor.value;

@@ -11,11 +11,19 @@
 </head>
 <body class="role-desktop loading">
   <header class="topbar">
-    <span class="brand">ephe</span>
-    <span class="status" id="status" aria-live="polite">
-      <span class="dot" aria-hidden="true"></span>
-      <span class="label" id="status-label">waiting</span>
-    </span>
+    <span class="brand"><img src="/text-logo.png" alt="ephe" width="88" height="20"></span>
+    <div class="topbar-actions">
+      <button class="btn btn-sm" id="collapse-btn" type="button">hide qr</button>
+      <button class="btn btn-sm top-copy" id="top-copy" type="button">copy</button>
+      <button class="btn btn-sm top-paste" id="top-paste" type="button">paste</button>
+      <button class="btn btn-sm top-clear" id="top-clear" type="button">clear</button>
+      <button class="btn btn-sm reset-btn top-reset" id="top-reset" type="button" hidden>start new session</button>
+      <button class="btn btn-sm btn-icon" id="theme-btn" type="button" aria-label="switch theme">&#9788;</button>
+      <span class="status" id="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span class="label" id="status-label">waiting</span>
+      </span>
+    </div>
   </header>
 
   <main id="app">
@@ -24,8 +32,11 @@
         <img id="qr" src="/qr" alt="" width="180" height="180" decoding="async">
       </div>
       <p class="hint" id="caption">scan to connect a phone</p>
-      <div id="reset-panel" hidden>
-        <button id="reset-btn" type="button" class="btn">start new session</button>
+      <div class="actions">
+        <button class="btn" id="copy-btn" type="button">copy</button>
+        <button class="btn" id="paste-btn" type="button">paste</button>
+        <button class="btn" id="clear-btn" type="button">clear</button>
+        <button class="btn reset-btn" id="reset-btn" type="button" hidden>start new session</button>
       </div>
     </section>
 
@@ -39,7 +50,10 @@
                 inputmode="text"
                 enterkeyhint="done"
                 aria-label="shared text"></textarea>
-      <p class="footer-hint" id="footer-hint">start typing — text syncs instantly</p>
+      <footer class="footer">
+        <p class="footer-hint" id="footer-hint">start typing — text syncs instantly</p>
+        <p class="footer-count" id="footer-count">0 chars · 0 words</p>
+      </footer>
     </section>
   </main>
 
