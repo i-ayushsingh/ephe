@@ -40,15 +40,24 @@ jobs:
           Set-Content -Path release\SHA256SUMS -Value ($sums -join "`r`n" + "`r`n") -Encoding utf8
 
       - name: publish release
-        if: startsWith(github.ref, 'refs/tags/') || github.event.release != null
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${{ github.event.release.tag_name || github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+            DRAFT="--draft"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            DRAFT=""
+          else
+            TAG="${{ github.ref_name }}"
+            DRAFT=""
+          fi
           ASSETS="release/ephe-setup.exe release/ephe-portable.zip release/Logo.png release/text-logo.png release/SHA256SUMS"
           if gh release view "$TAG" >/dev/null 2>&1; then
             # release already exists (e.g. a draft made by hand) — attach assets, leave state as-is
             gh release upload "$TAG" $ASSETS --clobber
           else
-            gh release create "$TAG" $ASSETS --title "ephe $TAG" --generate-notes
+            gh release create "$TAG" $ASSETS --title "ephe $TAG" $DRAFT --generate-notes
           fi
