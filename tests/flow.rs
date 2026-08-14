@@ -53,56 +53,61 @@ async fn mobile_join_with_wrong_token_is_rejected() {
 }
 
 #[tokio::test]
-async fn mobile_join_twice_is_rejected() {
+async fn two_mobiles_ok_third_rejected() {
     let session = new_session();
     let token = session.lock().await.token.clone();
     let (tx1, _rx1) = mpsc::unbounded_channel::<ServerMsg>();
     let (tx2, _rx2) = mpsc::unbounded_channel::<ServerMsg>();
+    let (tx3, _rx3) = mpsc::unbounded_channel::<ServerMsg>();
 
     let mut s = session.lock().await;
     assert!(accept(&mut s, "mobile", &token, tx1).is_ok());
-    let err = accept(&mut s, "mobile", &token, tx2).unwrap_err();
-    assert_eq!(err, "mobile already connected");
+    assert!(accept(&mut s, "mobile", &token, tx2).is_ok());
+    let err = accept(&mut s, "mobile", &token, tx3).unwrap_err();
+    assert_eq!(err, "session full: max 2 mobiles");
 }
 
 #[tokio::test]
-async fn disconnect_wipes_text_and_passes_peer_left_to_other() {
+async fn disconnect_wipes_text_and_passes_peer_left_to_others() {
     let session = new_session();
     let token = session.lock().await.token.clone();
     let (dtx, _drx) = mpsc::unbounded_channel::<ServerMsg>();
-    let (mtx, mut mrx) = mpsc::unbounded_channel::<ServerMsg>();
+    let (mtx1, mut mrx1) = mpsc::unbounded_channel::<ServerMsg>();
+    let (mtx2, mut mrx2) = mpsc::unbounded_channel::<ServerMsg>();
 
     {
         let mut s = session.lock().await;
-        accept(&mut s, "desktop", "", dtx).unwrap();
-        accept(&mut s, "mobile", &token, mtx).unwrap();
+        accept(&mut s, "desktop", "", dtx.clone()).unwrap();
+        accept(&mut s, "mobile", &token, mtx1.clone()).unwrap();
+        accept(&mut s, "mobile", &token, mtx2.clone()).unwrap();
         s.text = "secret".into();
     }
 
-    // desktop leaves -> mobile should get peer_left, text wiped, mobile still in
-    let peer_left_tx = {
+    // desktop leaves -> both mobiles get peer_left, text wiped, mobiles still in
+    {
         let mut s = session.lock().await;
-        let other = on_disconnect_for(&mut s, "desktop");
-        assert!(other.is_some(), "mobile should still be present");
+        let others = on_disconnect_for(&mut s, "desktop", &dtx);
+        assert_eq!(others.len(), 2, "both mobiles should still be present");
         assert!(s.text.is_empty(), "text must be wiped on disconnect");
         assert!(s.desktop.is_none());
-        assert!(s.mobile.is_some());
-        other.unwrap()
-    };
-    peer_left_tx.send(ServerMsg::PeerLeft).unwrap();
-    let got = mrx.recv().await.unwrap();
-    assert!(matches!(got, ServerMsg::PeerLeft));
+        assert_eq!(s.mobiles.len(), 2);
+        for t in others {
+            t.send(ServerMsg::PeerLeft).unwrap();
+        }
+    }
+    assert!(matches!(mrx1.recv().await.unwrap(), ServerMsg::PeerLeft));
+    assert!(matches!(mrx2.recv().await.unwrap(), ServerMsg::PeerLeft));
 
-    // mobile leaves too -> both gone, no peer_left target
-    let peer_left_tx = {
+    // both mobiles leave too -> nobody left, no peer_left targets
+    {
         let mut s = session.lock().await;
-        let other = on_disconnect_for(&mut s, "mobile");
-        assert!(other.is_none());
+        let others = on_disconnect_for(&mut s, "mobile", &mtx1);
+        assert_eq!(others.len(), 1, "mtx2 still present gets peer_left");
+        let others = on_disconnect_for(&mut s, "mobile", &mtx2);
+        assert!(others.is_empty());
         assert!(s.desktop.is_none());
-        assert!(s.mobile.is_none());
-        other
-    };
-    assert!(peer_left_tx.is_none());
+        assert!(s.mobiles.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -110,39 +115,43 @@ async fn reset_rotates_token_and_disconnects_clients() {
     let session = new_session();
     let old_token = session.lock().await.token.clone();
     let (dtx, mut drx) = mpsc::unbounded_channel::<ServerMsg>();
-    let (mtx, mut mrx) = mpsc::unbounded_channel::<ServerMsg>();
+    let (mtx1, mut mrx1) = mpsc::unbounded_channel::<ServerMsg>();
+    let (mtx2, mut mrx2) = mpsc::unbounded_channel::<ServerMsg>();
 
     {
         let mut s = session.lock().await;
-        accept(&mut s, "desktop", "", dtx).unwrap();
-        accept(&mut s, "mobile", &old_token, mtx).unwrap();
+        accept(&mut s, "desktop", "", dtx.clone()).unwrap();
+        accept(&mut s, "mobile", &old_token, mtx1.clone()).unwrap();
+        accept(&mut s, "mobile", &old_token, mtx2.clone()).unwrap();
         s.text = "secret".into();
     }
 
-    let (dtx, mtx, url) = {
+    let (dtx, mtxs, url) = {
         let mut s = session.lock().await;
         let (d, m, url) = reset_for(&mut s, 12345);
         assert!(d.is_some());
-        assert!(m.is_some());
+        assert_eq!(m.len(), 2);
         assert_ne!(s.token, old_token, "token must rotate");
         assert!(s.text.is_empty());
         assert!(s.desktop.is_none());
-        assert!(s.mobile.is_none());
+        assert!(s.mobiles.is_empty());
         assert!(url.contains("role=desktop"));
         assert!(url.contains(&s.token));
         (d, m, url)
     };
 
     dtx.unwrap().send(ServerMsg::Reset { url: url.clone() }).unwrap();
-    mtx.unwrap().send(ServerMsg::PeerLeft).unwrap();
+    for m in mtxs {
+        m.send(ServerMsg::PeerLeft).unwrap();
+    }
 
     let got = drx.recv().await.unwrap();
     match got {
         ServerMsg::Reset { url: u } => assert_eq!(u, url),
         _ => panic!("expected Reset, got {:?}", got),
     }
-    let got = mrx.recv().await.unwrap();
-    assert!(matches!(got, ServerMsg::PeerLeft));
+    assert!(matches!(mrx1.recv().await.unwrap(), ServerMsg::PeerLeft));
+    assert!(matches!(mrx2.recv().await.unwrap(), ServerMsg::PeerLeft));
 }
 
 // --- compile-time sanity: messages round-trip through serde ---

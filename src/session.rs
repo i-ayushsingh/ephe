@@ -9,8 +9,11 @@ pub struct Session {
     pub token: String,
     pub text: String,
     pub desktop: Option<Client>,
-    pub mobile: Option<Client>,
+    pub mobiles: Vec<Client>,
 }
+
+/// Hard cap: one desktop + two mobiles, nothing else.
+pub const MAX_MOBILES: usize = 2;
 
 pub struct Client {
     pub tx: tokio::sync::mpsc::UnboundedSender<ServerMsg>,
@@ -44,7 +47,7 @@ pub fn new_session() -> SharedSession {
         token,
         text: String::new(),
         desktop: None,
-        mobile: None,
+        mobiles: Vec::new(),
     }))
 }
 

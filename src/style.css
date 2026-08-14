@@ -108,6 +108,7 @@ body:not(.loading) main {
 body.role-desktop:not(.qr-collapsed) .top-copy,
 body.role-desktop:not(.qr-collapsed) .top-paste,
 body.role-desktop:not(.qr-collapsed) .top-clear,
+body.role-desktop:not(.qr-collapsed) .top-size,
 body.role-desktop:not(.qr-collapsed) .top-reset { display: none; }
 
 body.role-desktop.qr-collapsed .actions,
@@ -194,6 +195,31 @@ body.role-mobile .qr-panel { display: none; }
   color: var(--muted);
   letter-spacing: 0.01em;
 }
+
+/* ---------- URL fallback (QR alternative) ---------- */
+
+.url-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  max-width: 380px;
+}
+
+.url-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  outline: 0;
+}
+
+.url-text:focus { border-color: var(--line-strong); }
 
 /* ---------- editor panel ---------- */
 
@@ -332,8 +358,40 @@ body.role-mobile .actions { display: none; }
 .btn-sm { padding: 6px 10px; font-size: 12px; }
 .btn-icon { padding: 6px 9px; line-height: 1; }
 
+/* ---------- toasts ---------- */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+body.role-mobile .toasts { bottom: calc(env(safe-area-inset-bottom, 0px) + 56px); }
+
+.toast {
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+  padding: 8px 16px;
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--duration) var(--easing), transform var(--duration) var(--easing);
+}
+
+.toast.in { opacity: 1; transform: translateY(0); }
+.toast.out { opacity: 0; }
+
 /* when session is in error state, dim the QR so the reset button reads as the call to action */
-.status[data-state="error"] ~ * .qr-card {
+body.role-desktop .status[data-state="error"] ~ main .qr-card {
   opacity: 0.4;
   transition: opacity var(--duration) var(--easing);
 }
@@ -351,6 +409,9 @@ body.role-mobile .actions { display: none; }
     padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
     padding-bottom: 10px;
   }
+  .topbar-actions { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .btn-sm { padding: 5px 8px; font-size: 11.5px; }
+  body.role-mobile .status { display: none; } /* room for the extra buttons */
   .qr-panel { padding: var(--space-md) var(--space-md) var(--space-md); }
   #editor {
     font-size: 16px; /* prevents iOS zoom on focus */

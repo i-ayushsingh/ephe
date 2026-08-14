@@ -28,51 +28,57 @@ pub mod test_support {
             if !crate::session::is_valid_token(s, token) {
                 return Err("invalid token");
             }
-            if s.mobile.is_some() {
-                return Err("mobile already connected");
+            if s.mobiles.len() >= crate::session::MAX_MOBILES {
+                return Err("session full: max 2 mobiles");
             }
-            s.mobile = Some(Client { tx });
+            s.mobiles.push(Client { tx });
             Ok(())
         }
     }
 
-    /// Returns the other peer's sender, if any, after wiping the disconnecting
-    /// side. Used by /reset and the WS handler's on_disconnect.
+    /// Removes `me` from the session, wipes the text, and returns the senders
+    /// of every remaining peer (they get `PeerLeft`). Used by /reset and the
+    /// WS handler's on_disconnect.
     pub fn on_disconnect_for(
         s: &mut Session,
         role: &str,
-    ) -> Option<mpsc::UnboundedSender<ServerMsg>> {
+        me: &mpsc::UnboundedSender<ServerMsg>,
+    ) -> Vec<mpsc::UnboundedSender<ServerMsg>> {
         if role == "desktop" {
             s.desktop = None;
         } else {
-            s.mobile = None;
+            s.mobiles.retain(|m| !m.tx.same_channel(me));
         }
-        let other_tx = if role == "desktop" {
-            s.mobile.as_ref().map(|c| c.tx.clone())
+        let mut txs = Vec::new();
+        if role == "desktop" {
+            txs.extend(s.mobiles.iter().map(|c| c.tx.clone()));
         } else {
-            s.desktop.as_ref().map(|c| c.tx.clone())
-        };
+            if let Some(d) = s.desktop.as_ref() {
+                txs.push(d.tx.clone());
+            }
+            txs.extend(s.mobiles.iter().map(|c| c.tx.clone()));
+        }
         s.text.clear();
-        other_tx
+        txs
     }
 
-    /// Rotates the token, disconnects both peers, returns the new desktop URL.
+    /// Rotates the token, disconnects every peer, returns the new desktop URL.
     pub fn reset_for(
         s: &mut Session,
         port: u16,
     ) -> (
         Option<mpsc::UnboundedSender<ServerMsg>>,
-        Option<mpsc::UnboundedSender<ServerMsg>>,
+        Vec<mpsc::UnboundedSender<ServerMsg>>,
         String,
     ) {
         let dtx = s.desktop.as_ref().map(|c| c.tx.clone());
-        let mtx = s.mobile.as_ref().map(|c| c.tx.clone());
+        let mtxs: Vec<_> = s.mobiles.iter().map(|c| c.tx.clone()).collect();
         s.desktop = None;
-        s.mobile = None;
+        s.mobiles.clear();
         s.text.clear();
         let new_token = crate::session::random_token();
         s.token = new_token.clone();
         let url = format!("http://localhost:{}/?role=desktop&token={}", port, new_token);
-        (dtx, mtx, url)
+        (dtx, mtxs, url)
     }
 }

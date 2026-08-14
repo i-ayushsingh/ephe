@@ -20,7 +20,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::session::{
-    is_valid_token, random_token, Client, ClientMsg, ServerMsg, SharedSession,
+    is_valid_token, random_token, Client, ClientMsg, MAX_MOBILES, ServerMsg, SharedSession,
 };
 
 struct AppState {
@@ -42,6 +42,7 @@ pub fn build_router(
         .route("/logo.png", get(logo))
         .route("/text-logo.png", get(text_logo))
         .route("/qr", get(qr))
+        .route("/url", get(mobile_url))
         .route("/reset", post(reset))
         .route("/ws", get(ws))
         .with_state(state)
@@ -81,6 +82,14 @@ async fn qr(axum::extract::State(state): axum::extract::State<Arc<AppState>>) ->
     ([("content-type", "image/svg+xml")], svg).into_response()
 }
 
+/// The mobile URL as plain text, so the desktop can show it as a QR fallback.
+async fn mobile_url(axum::extract::State(state): axum::extract::State<Arc<AppState>>) -> Response {
+    let token = state.session.lock().await.token.clone();
+    let url = format!("http://{}:{}/?token={}", state.lan_ip, state.port, token);
+    let body = serde_json::json!({ "url": url }).to_string();
+    ([("content-type", "application/json")], body).into_response()
+}
+
 async fn text_logo() -> Response {
     let path = find_named("text-logo.png");
     match path {
@@ -117,7 +126,15 @@ fn find_named(name: &str) -> Option<PathBuf> {
     None
 }
 
-async fn reset(axum::extract::State(state): axum::extract::State<Arc<AppState>>) -> Response {
+async fn reset(
+    Query(q): Query<WsQuery>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> Response {
+    let token = q.token.unwrap_or_default();
+    let mut s = state.session.lock().await;
+    if !is_valid_token(&s, &token) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
     let new_token = random_token();
     let new_desktop_url = format!(
         "http://localhost:{}/?role=desktop&token={}",
@@ -128,23 +145,20 @@ async fn reset(axum::extract::State(state): axum::extract::State<Arc<AppState>>)
         state.lan_ip, state.port, new_token
     );
 
-    {
-        let mut s = state.session.lock().await;
-        // ponytail: tell the desktop to navigate, the mobile to leave, then
-        // rotate the token and wipe the slate.
-        if let Some(c) = s.desktop.as_ref() {
-            let _ = c.tx.send(ServerMsg::Reset {
-                url: new_desktop_url.clone(),
-            });
-        }
-        if let Some(c) = s.mobile.as_ref() {
-            let _ = c.tx.send(ServerMsg::PeerLeft);
-        }
-        s.desktop = None;
-        s.mobile = None;
-        s.text.clear();
-        s.token = new_token;
+    // ponytail: tell the desktop to navigate, the mobiles to leave, then
+    // rotate the token and wipe the slate.
+    if let Some(c) = s.desktop.as_ref() {
+        let _ = c.tx.send(ServerMsg::Reset {
+            url: new_desktop_url.clone(),
+        });
     }
+    for m in s.mobiles.iter() {
+        let _ = m.tx.send(ServerMsg::PeerLeft);
+    }
+    s.desktop = None;
+    s.mobiles.clear();
+    s.text.clear();
+    s.token = new_token;
 
     println!("ephe: session reset");
     println!("ephe: new desktop: {}", new_desktop_url);
@@ -198,7 +212,9 @@ async fn handle_socket(
     };
 
     let _ = tx.send(ServerMsg::Init { text: accepted });
-    broadcast(&state, ServerMsg::PeerJoined, role).await;
+    // ponytail: include the joiner so a second phone immediately shows as
+    // connected (and gets the join toast) instead of staying "waiting".
+    broadcast(&state, ServerMsg::PeerJoined, role, None).await;
 
     let mut should_close = false;
     loop {
@@ -226,7 +242,7 @@ async fn handle_socket(
                                 let mut s = state.session.lock().await;
                                 s.text = text.clone();
                             }
-                            broadcast(&state, ServerMsg::Text { text }, role).await;
+                            broadcast(&state, ServerMsg::Text { text }, role, Some(&tx)).await;
                         }
                     }
                     Some(Ok(_)) => continue,
@@ -239,7 +255,7 @@ async fn handle_socket(
     if should_close {
         let _ = sink.close().await;
     }
-    on_disconnect(&state, role).await;
+    on_disconnect(&state, role, &tx).await;
 }
 
 fn accept_into_session(
@@ -257,45 +273,69 @@ fn accept_into_session(
         if !is_valid_token(s, token) {
             return Err("invalid token");
         }
-        if s.mobile.is_some() {
-            return Err("mobile already connected");
+        if s.mobiles.len() >= MAX_MOBILES {
+            return Err("session full: max 2 mobiles");
         }
-        s.mobile = Some(Client { tx });
+        s.mobiles.push(Client { tx });
     }
     Ok(())
 }
 
-async fn on_disconnect(state: &AppState, role: &str) {
-    let other_tx = {
+async fn on_disconnect(
+    state: &AppState,
+    role: &str,
+    me: &mpsc::UnboundedSender<ServerMsg>,
+) {
+    let others = {
         let mut s = state.session.lock().await;
         if role == "desktop" {
             s.desktop = None;
         } else {
-            s.mobile = None;
+            s.mobiles.retain(|m| !m.tx.same_channel(me));
         }
         // ponytail: ephemeral by design — wipe on any disconnect
         s.text.clear();
+        let mut txs = Vec::new();
         if role == "desktop" {
-            s.mobile.as_ref().map(|c| c.tx.clone())
+            txs.extend(s.mobiles.iter().map(|m| m.tx.clone()));
         } else {
-            s.desktop.as_ref().map(|c| c.tx.clone())
+            if let Some(d) = s.desktop.as_ref() {
+                txs.push(d.tx.clone());
+            }
+            txs.extend(s.mobiles.iter().map(|m| m.tx.clone()));
         }
+        txs
     };
-    if let Some(tx) = other_tx {
-        let _ = tx.send(ServerMsg::PeerLeft);
+    for t in others {
+        let _ = t.send(ServerMsg::PeerLeft);
     }
 }
 
-async fn broadcast(state: &AppState, msg: ServerMsg, from_role: &str) {
-    let target = {
+/// Send `msg` to every peer except `exclude` (the sender).
+async fn broadcast(
+    state: &AppState,
+    msg: ServerMsg,
+    from_role: &str,
+    exclude: Option<&mpsc::UnboundedSender<ServerMsg>>,
+) {
+    let targets = {
         let s = state.session.lock().await;
-        if from_role == "desktop" {
-            s.mobile.as_ref().map(|m| m.tx.clone())
+        let mut txs: Vec<_> = if from_role == "desktop" {
+            s.mobiles.iter().map(|m| m.tx.clone()).collect()
         } else {
-            s.desktop.as_ref().map(|d| d.tx.clone())
+            s.desktop
+                .as_ref()
+                .map(|d| d.tx.clone())
+                .into_iter()
+                .chain(s.mobiles.iter().map(|m| m.tx.clone()))
+                .collect()
+        };
+        if let Some(ex) = exclude {
+            txs.retain(|t| !t.same_channel(ex));
         }
+        txs
     };
-    if let Some(t) = target {
-        let _ = t.send(msg);
+    for t in targets {
+        let _ = t.send(msg.clone());
     }
 }

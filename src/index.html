@@ -17,6 +17,8 @@
       <button class="btn btn-sm top-copy" id="top-copy" type="button">copy</button>
       <button class="btn btn-sm top-paste" id="top-paste" type="button">paste</button>
       <button class="btn btn-sm top-clear" id="top-clear" type="button">clear</button>
+      <button class="btn btn-sm top-size" id="top-size-down" type="button" aria-label="decrease text size">A&minus;</button>
+      <button class="btn btn-sm top-size" id="top-size-up" type="button" aria-label="increase text size">A+</button>
       <button class="btn btn-sm reset-btn top-reset" id="top-reset" type="button" hidden>start new session</button>
       <button class="btn btn-sm btn-icon" id="theme-btn" type="button" aria-label="switch theme">&#9788;</button>
       <span class="status" id="status" aria-live="polite">
@@ -32,10 +34,17 @@
         <img id="qr" src="/qr" alt="" width="180" height="180" decoding="async">
       </div>
       <p class="hint" id="caption">scan to connect a phone</p>
+      <div class="url-row" id="url-row" hidden>
+        <input id="url-text" class="url-text" type="text" readonly aria-label="mobile link">
+        <button class="btn btn-sm" id="copy-url-btn" type="button">copy link</button>
+        <button class="btn btn-sm" id="share-btn" type="button" hidden>share</button>
+      </div>
       <div class="actions">
         <button class="btn" id="copy-btn" type="button">copy</button>
         <button class="btn" id="paste-btn" type="button">paste</button>
         <button class="btn" id="clear-btn" type="button">clear</button>
+        <button class="btn" id="size-down-btn" type="button" aria-label="decrease text size">A&minus;</button>
+        <button class="btn" id="size-up-btn" type="button" aria-label="increase text size">A+</button>
         <button class="btn reset-btn" id="reset-btn" type="button" hidden>start new session</button>
       </div>
     </section>
@@ -57,6 +66,7 @@
     </section>
   </main>
 
+  <div class="toasts" id="toasts" aria-live="polite"></div>
   <script src="/app.js"></script>
 </body>
 </html>

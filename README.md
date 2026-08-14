@@ -6,6 +6,8 @@
 
 Run `ephe.exe`, scan the QR with your phone, type together. Close the window — everything is gone.
 
+Can't scan the QR? The mobile link is also shown as plain text on the desktop — click **copy link** and send it to the phone.
+
 - **~900 KB single portable binary** — no install, no admin, no runtime
 - **Local network only** — no cloud, no relay, no telemetry, no account
 - **In-memory only** — text lives in RAM; wiped on any disconnect
@@ -49,6 +51,7 @@ That's it.
 - Detects the Wi-Fi IP, generates a QR code pointing at `http://<lan-ip>:<port>/?token=...`
 - Opens your default browser at `http://localhost:<port>/?role=desktop&token=...`
 - Phone scans QR → connects → both sides have a shared textarea
+- Up to two phones can connect to the same desktop session
 - Every keystroke syncs over WebSocket (~16ms debounce)
 - Either side disconnects → text wiped, session ends, server shuts down
 
@@ -59,7 +62,7 @@ That's it.
 - ❌ No third-party API calls — phone + desktop only
 - ❌ No rich text, no formatting, no markdown, no images
 - ❌ No account, no login, no sign-up
-- ❌ No more than one phone at a time — second connection is rejected
+- ✅ Up to **two phones** at a time (one desktop + two mobiles; a third is rejected)
 - ❌ No mobile app — phone is just a browser
 
 ## Reset during a session

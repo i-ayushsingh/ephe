@@ -11,6 +11,38 @@ Categories:
 
 ---
 
+## v0.3.0 (unreleased)
+
+### Features added
+
+- Up to two phones per session (one desktop + two mobiles; a third is rejected with "session full"). Text from any peer reaches all others; any disconnect still wipes the session.
+- Mobile link shown as plain text under the QR with a one-click "copy link" button — QR fallback when the camera can't scan.
+- Toast notifications replace button-text flashes ("copied!", "pasted!", "cleared!", "link copied!").
+- Text size +/− controls (desktop action row + mobile topbar, per-device via localStorage, 12–24px).
+- Native share button (Web Share API) next to "copy link" — opens the system share sheet on the desktop, falls back to copying the link.
+- Desktop caption shows how many phones are connected ("1 phone connected" / "2 phones connected"); both sides get a toast when a phone joins.
+
+### UI/UX changes or overhaul
+
+- Mobile topbar shows status dot only (label hidden) to fit the new buttons.
+- Compact button sizing on narrow screens; phones drop the status dot entirely so copy / paste / clear / A− / A+ / theme always fit.
+- "start new session" now asks for confirmation — an accidental click can no longer wipe a session and kick both phones.
+
+### Error and bug fixes
+
+- Second phone's status dot stayed "waiting" forever — peer_joined is now also sent to the joining phone.
+- Rejection reasons ("session full: max 2 mobiles", "invalid token", "desktop already connected") were clobbered instantly by the socket close and hidden on phones — they now show as toasts (phones) and captions (desktop).
+- `/reset` accepted requests from any device on the LAN — it now requires the current session token.
+- Reset token rotation raced under concurrent requests — token is now generated inside the session lock.
+- QR card never dimmed on session error — the CSS selector referenced elements that are not siblings.
+- WebSocket `error` events left the editor editable — they now lock it and show reset, like `close` events.
+
+### Other
+
+-
+
+---
+
 ## v0.2.0 (released)
 
 ### Features added

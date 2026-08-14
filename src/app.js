@@ -16,6 +16,23 @@ const footerHint = document.getElementById("footer-hint");
 const footerCount = document.getElementById("footer-count");
 const collapseBtn = document.getElementById("collapse-btn");
 
+// ---------- toasts ----------
+
+const toastsEl = document.getElementById("toasts");
+
+function toast(text) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = text;
+  toastsEl.appendChild(el);
+  requestAnimationFrame(() => el.classList.add("in"));
+  setTimeout(() => {
+    el.classList.remove("in");
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 200);
+  }, 1500);
+}
+
 // ---------- char/word counter ----------
 
 function updateCounter() {
@@ -73,10 +90,24 @@ if (themeBtn) {
 
 // ---------- copy / paste ----------
 
-function flash(btn, label) {
-  const original = btn.textContent;
-  btn.textContent = label;
-  setTimeout(() => { btn.textContent = original; }, 1200);
+async function copyValue(text, okLabel) {
+  if (!text) return;
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch {
+    // ponytail: execCommand fallback for non-secure contexts (http://lan-ip)
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    ok = document.execCommand("copy");
+    ta.remove();
+  }
+  if (ok) toast(okLabel);
 }
 
 function insertAtCursor(text) {
@@ -87,26 +118,11 @@ function insertAtCursor(text) {
   editor.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-async function copyText(btn) {
-  const text = editor.value;
-  if (!text) return;
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // ponytail: execCommand fallback for non-secure contexts (http://lan-ip)
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-  }
-  flash(btn, "copied!");
+async function copyText() {
+  await copyValue(editor.value, "copied!");
 }
 
-async function pasteText(btn) {
+async function pasteText() {
   if (editor.readOnly) return;
   let text = null;
   try {
@@ -116,29 +132,80 @@ async function pasteText(btn) {
   }
   if (!text) return;
   insertAtCursor(text);
-  flash(btn, "pasted!");
+  toast("pasted!");
 }
 
 for (const btn of document.querySelectorAll(".top-copy, #copy-btn")) {
-  btn.addEventListener("click", () => copyText(btn));
+  btn.addEventListener("click", copyText);
 }
 for (const btn of document.querySelectorAll(".top-paste, #paste-btn")) {
-  btn.addEventListener("click", () => pasteText(btn));
+  btn.addEventListener("click", pasteText);
 }
 
 // ---------- clear ----------
 
-function clearText(btn) {
+function clearText() {
   if (editor.readOnly || !editor.value) return;
   editor.value = "";
   editor.setSelectionRange(0, 0);
   editor.dispatchEvent(new Event("input", { bubbles: true }));
-  flash(btn, "cleared!");
+  toast("cleared!");
 }
 
 for (const btn of document.querySelectorAll(".top-clear, #clear-btn")) {
-  btn.addEventListener("click", () => clearText(btn));
+  btn.addEventListener("click", clearText);
 }
+
+// ---------- mobile link fallback (QR alternative) ----------
+
+const urlRow = document.getElementById("url-row");
+const urlText = document.getElementById("url-text");
+
+if (isDesktop && urlRow) {
+  fetch("/url")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      if (!data || !data.url) return;
+      urlText.value = data.url;
+      urlRow.hidden = false;
+    })
+    .catch(() => {});
+  urlText.addEventListener("focus", () => urlText.select());
+  document.getElementById("copy-url-btn").addEventListener("click", () => {
+    copyValue(urlText.value, "link copied!");
+  });
+  const shareBtn = document.getElementById("share-btn");
+  if (shareBtn && navigator.share) {
+    shareBtn.hidden = false;
+    shareBtn.addEventListener("click", async () => {
+      try {
+        await navigator.share({ title: "ephe", text: "join my ephe session", url: urlText.value });
+      } catch (e) {
+        if (e.name !== "AbortError") copyValue(urlText.value, "link copied!");
+      }
+    });
+  }
+}
+
+// ---------- text size (per-device) ----------
+
+const SIZE_KEY = "ephe-text-size";
+const MIN_SIZE = 12, MAX_SIZE = 24;
+let textSize = parseInt(localStorage.getItem(SIZE_KEY), 10) || 16;
+
+function applyTextSize() {
+  textSize = Math.min(MAX_SIZE, Math.max(MIN_SIZE, textSize));
+  editor.style.fontSize = textSize + "px";
+  localStorage.setItem(SIZE_KEY, String(textSize));
+}
+
+for (const btn of document.querySelectorAll(".top-size, #size-up-btn, #size-down-btn")) {
+  btn.addEventListener("click", () => {
+    textSize += btn.id.includes("up") ? 2 : -2;
+    applyTextSize();
+  });
+}
+applyTextSize();
 
 const COPY_KEY = isMac ? "\u2318" : "Ctrl";
 
@@ -166,11 +233,12 @@ function showReset() {
 for (const resetBtn of document.querySelectorAll(".reset-btn")) {
   resetBtn.addEventListener("click", async () => {
     if (resetBtn.disabled) return;
+    if (!confirm("End this session for everyone?")) return;
     resetBtn.disabled = true;
     const original = resetBtn.textContent;
     resetBtn.textContent = "starting\u2026";
     try {
-      const res = await fetch("/reset", { method: "POST" });
+      const res = await fetch("/reset?token=" + encodeURIComponent(token), { method: "POST" });
       if (!res.ok) throw new Error("reset failed");
       const data = await res.json();
       location.href = data.url;
@@ -187,6 +255,7 @@ const ws = new WebSocket(wsUrl);
 
 let applying = false;
 let lastSent = "";
+let peerCount = 0;
 
 ws.addEventListener("open", () => {
   document.body.classList.remove("loading");
@@ -219,7 +288,12 @@ ws.addEventListener("message", (ev) => {
       updateCounter();
       break;
     case "peer_joined":
+      peerCount++;
       setStatus("connected", "connected");
+      if (isDesktop && captionEl) {
+        captionEl.textContent = peerCount === 1 ? "1 phone connected" : peerCount + " phones connected";
+      }
+      toast("phone connected");
       break;
     case "peer_left":
       setStatus("error", "error");
@@ -232,6 +306,9 @@ ws.addEventListener("message", (ev) => {
       break;
     case "error":
       setStatus("error", msg.reason || "rejected");
+      // phones hide the status label, so the reason goes in a toast
+      toast(msg.reason || "session ended");
+      if (isDesktop && captionEl) captionEl.textContent = msg.reason || "session ended";
       editor.readOnly = true;
       showReset();
       break;
@@ -239,13 +316,15 @@ ws.addEventListener("message", (ev) => {
 });
 
 ws.addEventListener("close", () => {
-  setStatus("error", "error");
   editor.readOnly = true;
   showReset();
+  if (statusEl.dataset.state !== "error") setStatus("error", "error");
 });
 
 ws.addEventListener("error", () => {
-  setStatus("error", "error");
+  editor.readOnly = true;
+  showReset();
+  if (statusEl.dataset.state !== "error") setStatus("error", "error");
 });
 
 let sendTimer = null;
