@@ -11,7 +11,15 @@ Categories:
 
 ---
 
-## v0.4.0 (unreleased)
+## v0.5.0 (unreleased)
+
+### UI/UX changes or overhaul
+
+- Desktop action buttons (copy / paste / clear / lock pad / A− / A+) moved out of the QR panel into the footer, centered between the "start typing" hint and the char counter — collapsing the QR no longer shuffles buttons to the topbar, the layout stays put. Mobile unchanged (buttons stay in the topbar).
+
+---
+
+## v0.4.0 (released)
 
 ### Features added
 

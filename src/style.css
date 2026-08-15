@@ -105,14 +105,13 @@ body:not(.loading) main {
   gap: var(--space-sm);
 }
 
-body.role-desktop:not(.qr-collapsed) .top-copy,
-body.role-desktop:not(.qr-collapsed) .top-paste,
-body.role-desktop:not(.qr-collapsed) .top-clear,
-body.role-desktop:not(.qr-collapsed) .top-size,
-body.role-desktop:not(.qr-collapsed) .top-lock,
-body.role-desktop:not(.qr-collapsed) .top-reset { display: none; }
+/* desktop action buttons live in the footer; the topbar copies are mobile-only */
+body.role-desktop .top-copy,
+body.role-desktop .top-paste,
+body.role-desktop .top-clear,
+body.role-desktop .top-size,
+body.role-desktop .top-reset { display: none; }
 
-body.role-desktop.qr-collapsed .actions,
 body.role-desktop.qr-collapsed .qr-panel { display: none; }
 
 body.role-mobile #collapse-btn { display: none; }
@@ -313,6 +312,14 @@ body.role-mobile .editor-panel { border-top: 0; }
   color: var(--muted);
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  flex: 1 1 0;
+}
+
+.footer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: 0 0 auto;
 }
 
 .footer-count {
@@ -323,6 +330,8 @@ body.role-mobile .editor-panel { border-top: 0; }
   text-transform: uppercase;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  flex: 1 1 0;
+  text-align: right;
 }
 
 body.role-mobile .footer { display: none; }
@@ -340,15 +349,6 @@ body.role-mobile .footer { display: none; }
 }
 
 /* ---------- action buttons ---------- */
-
-.actions {
-  display: flex;
-  justify-content: center;
-  gap: var(--space-sm);
-  margin-top: var(--space-sm);
-}
-
-body.role-mobile .actions { display: none; }
 
 .btn {
   appearance: none;
