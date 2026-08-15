@@ -10,6 +10,8 @@ pub struct Session {
     pub text: String,
     pub desktop: Option<Client>,
     pub mobiles: Vec<Client>,
+    /// single-writer mode: when true, only the desktop may edit
+    pub locked: bool,
 }
 
 /// Hard cap: one desktop + two mobiles, nothing else.
@@ -23,9 +25,13 @@ pub struct Client {
 #[serde(tag = "type")]
 pub enum ServerMsg {
     #[serde(rename = "init")]
-    Init { text: String },
+    Init { text: String, locked: bool },
     #[serde(rename = "text")]
     Text { text: String },
+    #[serde(rename = "typing")]
+    Typing,
+    #[serde(rename = "locked")]
+    Locked { locked: bool },
     #[serde(rename = "peer_joined")]
     PeerJoined,
     #[serde(rename = "peer_left")]
@@ -39,6 +45,10 @@ pub enum ServerMsg {
 pub enum ClientMsg {
     #[serde(rename = "text")]
     Text { text: String },
+    #[serde(rename = "typing")]
+    Typing,
+    #[serde(rename = "lock")]
+    Lock { locked: bool },
 }
 
 pub fn new_session() -> SharedSession {
@@ -48,6 +58,7 @@ pub fn new_session() -> SharedSession {
         text: String::new(),
         desktop: None,
         mobiles: Vec::new(),
+        locked: false,
     }))
 }
 

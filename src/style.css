@@ -109,6 +109,7 @@ body.role-desktop:not(.qr-collapsed) .top-copy,
 body.role-desktop:not(.qr-collapsed) .top-paste,
 body.role-desktop:not(.qr-collapsed) .top-clear,
 body.role-desktop:not(.qr-collapsed) .top-size,
+body.role-desktop:not(.qr-collapsed) .top-lock,
 body.role-desktop:not(.qr-collapsed) .top-reset { display: none; }
 
 body.role-desktop.qr-collapsed .actions,
@@ -234,6 +235,27 @@ body.role-mobile .qr-panel { display: none; }
 
 body.role-mobile .editor-panel { border-top: 0; }
 
+/* transient hints over the editor: "someone is typing…", "new text below ↓",
+   "pad locked by desktop" */
+.editor-hint {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  margin: 0;
+  padding: 3px 12px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 #editor {
   flex: 1 1 auto;
   width: 100%;
@@ -354,6 +376,15 @@ body.role-mobile .actions { display: none; }
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* lock pad is desktop-only, and reads as an active toggle while locked */
+.lock-btn.locked {
+  border-color: var(--accent);
+  color: var(--bg);
+  background: var(--accent);
+}
+
+body.role-mobile .lock-btn { display: none; }
 
 .btn-sm { padding: 6px 10px; font-size: 12px; }
 .btn-icon { padding: 6px 9px; line-height: 1; }

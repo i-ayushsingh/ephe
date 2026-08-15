@@ -16,6 +16,24 @@ const footerHint = document.getElementById("footer-hint");
 const footerCount = document.getElementById("footer-count");
 const collapseBtn = document.getElementById("collapse-btn");
 
+// ---------- transient hint pill over the editor ----------
+
+const hintEl = document.getElementById("editor-hint");
+let hintTimer = null;
+
+function showHint(text) {
+  if (!hintEl) return;
+  hintEl.textContent = text;
+  hintEl.hidden = false;
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => { hintEl.hidden = true; }, 2000);
+}
+
+function hideHint() {
+  clearTimeout(hintTimer);
+  if (hintEl) hintEl.hidden = true;
+}
+
 // ---------- toasts ----------
 
 const toastsEl = document.getElementById("toasts");
@@ -201,7 +219,13 @@ function applyTextSize() {
 
 for (const btn of document.querySelectorAll(".top-size, #size-up-btn, #size-down-btn")) {
   btn.addEventListener("click", () => {
-    textSize += btn.id.includes("up") ? 2 : -2;
+    const up = btn.id.includes("up");
+    const next = textSize + (up ? 2 : -2);
+    if (next > MAX_SIZE || next < MIN_SIZE) {
+      toast(up ? "maximum size reached" : "minimum size reached");
+      return;
+    }
+    textSize = next;
     applyTextSize();
   });
 }
@@ -255,7 +279,31 @@ const ws = new WebSocket(wsUrl);
 
 let applying = false;
 let lastSent = "";
+let lastTypingSent = 0;
 let peerCount = 0;
+let padLocked = false;
+
+function applyLock() {
+  if (!isDesktop) editor.readOnly = padLocked;
+  for (const b of document.querySelectorAll(".lock-btn")) {
+    b.textContent = padLocked ? "unlock pad" : "lock pad";
+    b.classList.toggle("locked", padLocked);
+  }
+  if (!isDesktop) {
+    if (padLocked) showHint("pad locked by desktop");
+    else hideHint();
+  }
+}
+
+for (const btn of document.querySelectorAll(".lock-btn")) {
+  btn.addEventListener("click", () => {
+    padLocked = !padLocked;
+    applyLock();
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "lock", locked: padLocked }));
+    }
+  });
+}
 
 ws.addEventListener("open", () => {
   document.body.classList.remove("loading");
@@ -270,22 +318,40 @@ ws.addEventListener("message", (ev) => {
       applying = true;
       editor.value = msg.text || "";
       lastSent = editor.value;
+      padLocked = !!msg.locked;
+      applyLock();
       applying = false;
       updateCounter();
       if (isDesktop) editor.focus({ preventScroll: true });
       break;
     case "text":
       if (msg.text === lastSent) break;
+      // ponytail: keep the caret where it was (reading a scrolled-up spot)
+      // unless it sat near the old end — only then jump to the new end.
+      const prevLen = editor.value.length;
+      const prevStart = editor.selectionStart;
+      const wasNearEnd = prevStart >= prevLen - 8;
       applying = true;
       editor.value = msg.text || "";
-      // ponytail: drop the caret at the end of the new text so the user sees
-      // where the remote edit landed instead of the cursor freezing at a
-      // stale character index.
       const len = editor.value.length;
-      editor.setSelectionRange(len, len);
+      if (wasNearEnd) {
+        editor.setSelectionRange(len, len);
+        hideHint();
+      } else {
+        const pos = Math.min(prevStart, len);
+        editor.setSelectionRange(pos, pos);
+        if (len > prevLen) showHint("new text below \u2193");
+      }
       lastSent = editor.value;
       applying = false;
       updateCounter();
+      break;
+    case "typing":
+      showHint("someone is typing\u2026");
+      break;
+    case "locked":
+      padLocked = !!msg.locked;
+      applyLock();
       break;
     case "peer_joined":
       peerCount++;
@@ -296,6 +362,7 @@ ws.addEventListener("message", (ev) => {
       toast("phone connected");
       break;
     case "peer_left":
+      peerCount = 0;
       setStatus("error", "error");
       editor.readOnly = true;
       showReset();
@@ -334,6 +401,12 @@ editor.addEventListener("input", () => {
   if (editor.value === lastSent) return;
   lastSent = editor.value;
   if (ws.readyState !== 1) return;
+  // ponytail: throttle typing pings — one per 800ms burst, the debounced text
+  // send resolves the indicator anyway.
+  if (Date.now() - lastTypingSent > 800) {
+    lastTypingSent = Date.now();
+    ws.send(JSON.stringify({ type: "typing" }));
+  }
   // ponytail: tiny debounce so a fast typist doesn't send a packet per keystroke
   clearTimeout(sendTimer);
   sendTimer = setTimeout(() => {

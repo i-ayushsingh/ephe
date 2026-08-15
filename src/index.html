@@ -17,6 +17,7 @@
       <button class="btn btn-sm top-copy" id="top-copy" type="button">copy</button>
       <button class="btn btn-sm top-paste" id="top-paste" type="button">paste</button>
       <button class="btn btn-sm top-clear" id="top-clear" type="button">clear</button>
+      <button class="btn btn-sm lock-btn" id="top-lock" type="button">lock pad</button>
       <button class="btn btn-sm top-size" id="top-size-down" type="button" aria-label="decrease text size">A&minus;</button>
       <button class="btn btn-sm top-size" id="top-size-up" type="button" aria-label="increase text size">A+</button>
       <button class="btn btn-sm reset-btn top-reset" id="top-reset" type="button" hidden>start new session</button>
@@ -43,6 +44,7 @@
         <button class="btn" id="copy-btn" type="button">copy</button>
         <button class="btn" id="paste-btn" type="button">paste</button>
         <button class="btn" id="clear-btn" type="button">clear</button>
+        <button class="btn lock-btn" id="lock-btn" type="button">lock pad</button>
         <button class="btn" id="size-down-btn" type="button" aria-label="decrease text size">A&minus;</button>
         <button class="btn" id="size-up-btn" type="button" aria-label="increase text size">A+</button>
         <button class="btn reset-btn" id="reset-btn" type="button" hidden>start new session</button>
@@ -50,6 +52,7 @@
     </section>
 
     <section class="editor-panel">
+      <p class="editor-hint" id="editor-hint" hidden></p>
       <textarea id="editor"
                 spellcheck="false"
                 autocapitalize="off"

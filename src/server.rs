@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
     extract::{
@@ -27,6 +28,8 @@ struct AppState {
     session: SharedSession,
     port: u16,
     lan_ip: String,
+    /// WS heartbeat period in seconds; peers silent for 3x this get dropped.
+    heartbeat_secs: u64,
 }
 
 pub fn build_router(
@@ -34,7 +37,12 @@ pub fn build_router(
     port: u16,
     lan_ip: String,
 ) -> Router {
-    let state = Arc::new(AppState { session, port, lan_ip });
+    // ponytail: env knob so a test can shrink the heartbeat; default 10s.
+    let heartbeat_secs: u64 = std::env::var("EPHE_HEARTBEAT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+    let state = Arc::new(AppState { session, port, lan_ip, heartbeat_secs });
     Router::new()
         .route("/", get(index))
         .route("/style.css", get(css))
@@ -158,6 +166,7 @@ async fn reset(
     s.desktop = None;
     s.mobiles.clear();
     s.text.clear();
+    s.locked = false;
     s.token = new_token;
 
     println!("ephe: session reset");
@@ -195,10 +204,10 @@ async fn handle_socket(
     let (mut sink, mut stream) = socket.split();
 
     // accept into session
-    let accepted = {
+    let (accepted, locked) = {
         let mut s = state.session.lock().await;
         match accept_into_session(&mut s, role, &token, tx.clone()) {
-            Ok(()) => s.text.clone(),
+            Ok(()) => (s.text.clone(), s.locked),
             Err(reason) => {
                 let _ = sink
                     .send(Message::Text(
@@ -211,15 +220,31 @@ async fn handle_socket(
         }
     };
 
-    let _ = tx.send(ServerMsg::Init { text: accepted });
+    let _ = tx.send(ServerMsg::Init { text: accepted, locked });
     // ponytail: include the joiner so a second phone immediately shows as
     // connected (and gets the join toast) instead of staying "waiting".
     broadcast(&state, ServerMsg::PeerJoined, role, None).await;
+
+    // Heartbeat: ping every `heartbeat_secs`; browsers auto-pong at the
+    // protocol level (even in background tabs). A peer that stops answering
+    // (app force-killed, Wi-Fi dropped, airplane mode) gets no pong, so its
+    // liveness deadline passes and we drop it — otherwise the session would
+    // linger with a phantom peer forever.
+    let period = Duration::from_secs(state.heartbeat_secs);
+    let mut heartbeat = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    // absolute deadline, refreshed only when a frame actually arrives
+    let mut deadline = tokio::time::Instant::now() + period * 3;
 
     let mut should_close = false;
     loop {
         tokio::select! {
             biased;
+            _ = heartbeat.tick() => {
+                if sink.send(Message::Ping(vec![])).await.is_err() {
+                    break;
+                }
+            }
             msg = rx.recv() => {
                 let Some(msg) = msg else { break; };
                 let payload = match serde_json::to_string(&msg) {
@@ -237,17 +262,44 @@ async fn handle_socket(
             ws_msg = stream.next() => {
                 match ws_msg {
                     Some(Ok(Message::Text(t))) => {
-                        if let Ok(ClientMsg::Text { text }) = serde_json::from_str(&t) {
-                            {
-                                let mut s = state.session.lock().await;
-                                s.text = text.clone();
+                        if let Ok(cmsg) = serde_json::from_str::<ClientMsg>(&t) {
+                            match cmsg {
+                                ClientMsg::Text { text } => {
+                                    {
+                                        let mut s = state.session.lock().await;
+                                        s.text = text.clone();
+                                    }
+                                    broadcast(&state, ServerMsg::Text { text }, role, Some(&tx))
+                                        .await;
+                                }
+                                ClientMsg::Typing => {
+                                    broadcast(&state, ServerMsg::Typing, role, Some(&tx)).await;
+                                }
+                                ClientMsg::Lock { locked } => {
+                                    // ponytail: single-writer is desktop-only; phones can't lock
+                                    if role == "desktop" {
+                                        {
+                                            let mut s = state.session.lock().await;
+                                            s.locked = locked;
+                                        }
+                                        broadcast(&state, ServerMsg::Locked { locked }, role, Some(&tx))
+                                            .await;
+                                    }
+                                }
                             }
-                            broadcast(&state, ServerMsg::Text { text }, role, Some(&tx)).await;
                         }
+                        deadline = tokio::time::Instant::now() + period * 3;
                     }
-                    Some(Ok(_)) => continue,
+                    Some(Ok(_)) => {
+                        // pongs (and anything else) prove the peer is alive
+                        deadline = tokio::time::Instant::now() + period * 3;
+                    }
                     Some(Err(_)) | None => break,
                 }
+            }
+            _ = tokio::time::sleep_until(deadline) => {
+                println!("ephe: heartbeat timeout, dropping silent {role}");
+                break;
             }
         }
     }

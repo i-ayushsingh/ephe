@@ -23,6 +23,14 @@ def drain(stream, label):
         print(f"[{label}] {line.decode('utf-8', errors='replace').rstrip()}", flush=True)
 
 
+async def recv_until(ws, pred, timeout=3):
+    """recv frames until pred(json) is true; skips e.g. extra peer_joined."""
+    while True:
+        m = json.loads(await asyncio.wait_for(ws.recv(), timeout=timeout))
+        if pred(m):
+            return m
+
+
 async def main():
     env = os.environ.copy()
     env["EPHE_NO_BROWSER"] = "1"
@@ -65,15 +73,14 @@ async def main():
                 assert json.loads(mmsg)["type"] == "peer_joined"
                 print("MOBILE peer_joined ok", flush=True)
                 await desktop.send(json.dumps({"type": "text", "text": "from desktop"}))
-                txt = await asyncio.wait_for(mobile.recv(), timeout=3)
-                assert json.loads(txt) == {"type": "text", "text": "from desktop"}
+                txt = await recv_until(mobile, lambda j: j["type"] == "text")
+                assert txt == {"type": "text", "text": "from desktop"}
                 print("sync desktop->mobile ok", flush=True)
                 await mobile.send(json.dumps({"type": "text", "text": "from mobile"}))
                 txt = await asyncio.wait_for(desktop.recv(), timeout=3)
                 assert json.loads(txt) == {"type": "text", "text": "from mobile"}
                 print("sync mobile->desktop ok", flush=True)
-            pl = await asyncio.wait_for(mobile.recv(), timeout=3)
-            assert json.loads(pl)["type"] == "peer_left"
+            pl = await recv_until(mobile, lambda j: j["type"] == "peer_left")
             print("MOBILE peer_left ok", flush=True)
 
         # mobile closed. with reset semantics the binary should still be running.
@@ -84,7 +91,7 @@ async def main():
 
         # hit /reset to rotate the token and confirm a new mobile can join
         import urllib.request
-        req = urllib.request.Request(f"http://localhost:{port}/reset", method="POST")
+        req = urllib.request.Request(f"http://localhost:{port}/reset?token={token}", method="POST")
         with urllib.request.urlopen(req, timeout=3) as r:
             data = json.loads(r.read())
         new_url = data["url"]

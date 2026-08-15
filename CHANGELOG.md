@@ -11,7 +11,23 @@ Categories:
 
 ---
 
-## v0.3.0 (unreleased)
+## v0.4.0 (unreleased)
+
+### Features added
+
+- "someone is typing…" indicator — a debounced relayed typing message shows a transient pill over the editor while another peer is typing, and auto-hides ~2s after they stop (or when their text arrives). — a debounced relayed typing message shows a transient pill over the editor while another peer is typing, and auto-hides ~2s after they stop (or when their text arrives).
+- Caret is no longer yanked to the bottom on remote keystrokes — if your cursor sits in the middle or you're scrolled up reading, it stays put and a "new text below ↓" pill appears instead; the caret only jumps to the end when it was already near the end.
+- Lock pad (single-writer mode, desktop only): a "lock pad" button takes exclusive write access — every other device goes read-only with a "pad locked by desktop" pill until the desktop unlocks. Lock state survives desktop reloads (sent in `init`) and resets with a new session. Phones cannot lock.
+
+### Error and bug fixes
+
+- With two phones connected, killing one phone's app (or its Wi-Fi dropping) left the desktop showing "2 phones connected" forever — the server never noticed the dead peer and never wiped the session. The server now pings every WebSocket peer every 10s (protocol-level ping; browsers auto-pong even in background tabs) and drops any peer silent for 30s, so a force-killed phone is detected, the session wipes, and every remaining peer gets `peer_left` like any other disconnect. Heartbeat period is tunable via `EPHE_HEARTBEAT_SECS`.
+- Peer count no longer survives a disconnect — a phone rejoining after a wipe reports "1 phone connected", not a stale higher count.
+- Pressing A+ at the maximum text size (or A− at the minimum) now shows a toast ("maximum size reached" / "minimum size reached") instead of silently doing nothing.
+
+---
+
+## v0.3.0 (released)
 
 ### Features added
 

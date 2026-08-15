@@ -158,8 +158,11 @@ async fn reset_rotates_token_and_disconnects_clients() {
 
 #[test]
 fn server_msg_serializes_with_type_tag() {
-    let s = ServerMsg::Init { text: "hi".into() };
-    assert_eq!(serde_json::to_string(&s).unwrap(), r#"{"type":"init","text":"hi"}"#);
+    let s = ServerMsg::Init { text: "hi".into(), locked: false };
+    assert_eq!(
+        serde_json::to_string(&s).unwrap(),
+        r#"{"type":"init","text":"hi","locked":false}"#
+    );
 
     let s = ServerMsg::PeerJoined;
     assert_eq!(serde_json::to_string(&s).unwrap(), r#"{"type":"peer_joined"}"#);
@@ -176,5 +179,12 @@ fn client_msg_deserializes() {
     let m: ClientMsg = serde_json::from_str(j).unwrap();
     match m {
         ClientMsg::Text { text } => assert_eq!(text, "hello"),
+        _ => panic!("expected Text"),
     }
+
+    let m: ClientMsg = serde_json::from_str(r#"{"type":"typing"}"#).unwrap();
+    assert!(matches!(m, ClientMsg::Typing));
+
+    let m: ClientMsg = serde_json::from_str(r#"{"type":"lock","locked":true}"#).unwrap();
+    assert!(matches!(m, ClientMsg::Lock { locked: true }));
 }
