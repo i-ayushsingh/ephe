@@ -158,8 +158,6 @@ body.role-mobile .devices { display: none; }
 }
 
 /* desktop action buttons live in the footer; the topbar copies are mobile-only */
-body.role-desktop .top-undo,
-body.role-desktop .top-redo,
 body.role-desktop .top-copy,
 body.role-desktop .top-paste,
 body.role-desktop .top-clear,
@@ -398,7 +396,39 @@ body.role-mobile .editor-panel { border-top: 0; }
   text-align: right;
 }
 
-body.role-mobile .footer { display: none; }
+/* mobile: bottom action bar — undo | transform menu | redo, symbols only */
+body.role-mobile .footer { display: flex; }
+body.role-mobile .footer-hint,
+body.role-mobile .footer-count { display: none; }
+body.role-mobile .footer-actions { flex: 1 1 0; justify-content: space-between; }
+body.role-mobile .btn-txt { display: none; }
+body.role-mobile .undo-btn,
+body.role-mobile .redo-btn {
+  font-size: 24px;
+  line-height: 1;
+  padding: 10px 14px;
+}
+body.role-mobile #transform-btn {
+  font-size: 13px;
+  padding: 10px 16px;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+body.role-mobile #clear-btn,
+body.role-mobile #size-down-btn,
+body.role-mobile #size-up-btn,
+body.role-mobile #size-reset-btn,
+body.role-mobile #font-btn,
+body.role-mobile #wrap-btn,
+body.role-mobile #reset-btn { display: none; }
+/* mobile row order: undo | copy | transform | paste | redo */
+body.role-mobile #undo-btn { order: 1; }
+body.role-mobile #copy-btn { order: 2; }
+body.role-mobile #transform-btn { order: 3; }
+body.role-mobile #paste-btn { order: 4; }
+body.role-mobile #redo-btn { order: 5; }
+/* the shortcuts reference is desktop-only (mobile has no keyboard) */
+body.role-mobile #shortcuts-btn { display: none; }
 
 .footer-hint kbd {
   font-family: var(--font-mono);
@@ -452,6 +482,97 @@ body.role-mobile .lock-btn { display: none; }
 
 /* history (time-travel undo) is desktop-only */
 body.role-mobile .top-history { display: none; }
+
+/* transform menu (mobile) — bottom sheet that slides up */
+.transform-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  padding: var(--space-lg);
+}
+
+body.role-mobile .transform-panel {
+  align-items: flex-end;
+  padding: 0;
+}
+
+body.role-mobile .transform-card {
+  width: 100%;
+  max-width: none;
+  border-radius: 16px 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+  padding: var(--space-lg) var(--space-lg) calc(env(safe-area-inset-bottom, 0px) + var(--space-lg));
+  animation: sheet-up 0.25s ease-out;
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.transform-card {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: var(--space-lg);
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.transform-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.transform-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.transform-item {
+  width: 100%;
+  text-align: left;
+}
+
+.shortcuts-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.shortcuts-list kbd {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+}
 
 .history-panel {
   position: fixed;

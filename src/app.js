@@ -463,10 +463,10 @@ function commitHistory(oldText) {
 }
 
 function updateUndoRedo() {
-  for (const b of document.querySelectorAll(".undo-btn, .top-undo")) {
+  for (const b of document.querySelectorAll(".undo-btn")) {
     b.disabled = !undoStack.length;
   }
-  for (const b of document.querySelectorAll(".redo-btn, .top-redo")) {
+  for (const b of document.querySelectorAll(".redo-btn")) {
     b.disabled = !redoStack.length;
   }
 }
@@ -489,47 +489,11 @@ function doRedo() {
   applyTextBroadcast(next);
 }
 
-for (const btn of document.querySelectorAll(".undo-btn, .top-undo")) {
+for (const btn of document.querySelectorAll(".undo-btn")) {
   btn.addEventListener("click", doUndo);
 }
-for (const btn of document.querySelectorAll(".redo-btn, .top-redo")) {
+for (const btn of document.querySelectorAll(".redo-btn")) {
   btn.addEventListener("click", doRedo);
-}
-
-// ---------- case conversion (click: caps -> small -> original) ----------
-
-let caseState = "base";
-let caseBase = null;
-
-function applyCaseLabel() {
-  const label = caseState === "upper" ? "AA" : caseState === "lower" ? "aa" : "Aa";
-  for (const b of document.querySelectorAll(".case-toggle")) {
-    b.textContent = label;
-  }
-}
-
-function cycleCase() {
-  if (!editor.value) return;
-  if (caseState === "base") {
-    caseBase = editor.value;
-    commitHistory(editor.value);
-    if (!applyTextBroadcast(editor.value.toUpperCase(), "uppercase")) return;
-    caseState = "upper";
-  } else if (caseState === "upper") {
-    commitHistory(editor.value);
-    if (!applyTextBroadcast(editor.value.toLowerCase(), "lowercase")) return;
-    caseState = "lower";
-  } else {
-    commitHistory(editor.value);
-    if (!applyTextBroadcast(caseBase || editor.value, "original case")) return;
-    caseState = "base";
-    caseBase = null;
-  }
-  applyCaseLabel();
-}
-
-for (const btn of document.querySelectorAll(".case-toggle")) {
-  btn.addEventListener("click", cycleCase);
 }
 
 // ---------- connected-phones bar (desktop) ----------
@@ -573,6 +537,74 @@ if (historyPanel) {
   });
 }
 
+// ---------- transform menu (mobile: bottom-centre ⋮ button) ----------
+
+const transformPanel = document.getElementById("transform-panel");
+const transformList = document.getElementById("transform-list");
+
+const TRANSFORMS = [
+  { label: "UPPERCASE", apply: (t) => t.toUpperCase() },
+  { label: "lowercase", apply: (t) => t.toLowerCase() },
+  { label: "Title Case", apply: (t) => t.replace(/\S+/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase()) },
+  { label: "Sentence case", apply: (t) => t.replace(/(^\s*\w|[.!?]\s+\w)/g, (c) => c.toUpperCase()) },
+  { label: "Trim whitespace", apply: (t) => t.trim() },
+  { label: "Remove empty lines", apply: (t) => t.split("\n").filter((l) => l.trim() !== "").join("\n") },
+];
+
+if (transformList) {
+  for (const tr of TRANSFORMS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "btn btn-sm transform-item";
+    b.textContent = tr.label;
+    b.addEventListener("click", () => {
+      if (!editor.value) { toast("nothing to transform"); return; }
+      const out = tr.apply(editor.value);
+      if (out === editor.value) { toast("nothing to change"); return; }
+      commitHistory(editor.value);
+      if (applyTextBroadcast(out, "transformed")) transformPanel.hidden = true;
+      updateUndoRedo();
+    });
+    transformList.appendChild(b);
+  }
+}
+
+function hideTransform() {
+  if (transformPanel) transformPanel.hidden = true;
+}
+
+const transformBtn = document.getElementById("transform-btn");
+if (transformBtn) {
+  transformBtn.addEventListener("click", () => {
+    transformPanel.hidden = !transformPanel.hidden;
+  });
+}
+if (transformPanel) {
+  transformPanel.addEventListener("click", (e) => {
+    if (e.target === transformPanel) hideTransform();
+  });
+}
+document.getElementById("transform-close").addEventListener("click", hideTransform);
+
+// ---------- keyboard shortcuts reference (desktop only, native in browser) ----------
+
+const shortcutsPanel = document.getElementById("shortcuts-panel");
+function hideShortcuts() {
+  if (shortcutsPanel) shortcutsPanel.hidden = true;
+}
+const shortcutsBtn = document.getElementById("shortcuts-btn");
+if (shortcutsBtn) {
+  shortcutsBtn.addEventListener("click", () => {
+    shortcutsPanel.hidden = !shortcutsPanel.hidden;
+  });
+}
+if (shortcutsPanel) {
+  shortcutsPanel.addEventListener("click", (e) => {
+    if (e.target === shortcutsPanel) hideShortcuts();
+  });
+}
+document.getElementById("shortcuts-close").addEventListener("click", hideShortcuts);
+
 ws.addEventListener("open", () => {
   document.body.classList.remove("loading");
   setStatus("idle", "waiting");
@@ -599,9 +631,6 @@ ws.addEventListener("message", (ev) => {
     case "text":
       if (msg.text === lastSent) break;
       commitHistory(editor.value);
-      caseState = "base";
-      caseBase = null;
-      applyCaseLabel();
       // ponytail: keep the caret where it was (reading a scrolled-up spot)
       // unless it sat near the old end — only then jump to the new end.
       const prevLen = editor.value.length;
@@ -698,9 +727,6 @@ editor.addEventListener("input", () => {
   lastSent = editor.value;
   seenRoundTrip.clear();
   commitHistory(prev);
-  caseState = "base";
-  caseBase = null;
-  applyCaseLabel();
   if (ws.readyState !== 1) return;
   // ponytail: throttle typing pings — one per 800ms burst, the debounced text
   // send resolves the indicator anyway.

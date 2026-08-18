@@ -13,16 +13,15 @@ Categories:
 
 ## v0.9.0 (unreleased)
 
-### Features planned
+### Features added
 
-- **More text transformations** — v0.8.0 already covers uppercase/lowercase/normal; extend it into a small Transform action instead of adding random buttons:
-  - UPPERCASE
-  - lowercase
-  - Title Case
-  - Sentence case
-  - Trim whitespace
-  - Remove empty lines
-- **Select All / keyboard shortcuts** — ephe has accumulated a lot of actions, but make the basic editor experience much stronger. Support the expected shortcuts: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+Z, Ctrl+Y, Ctrl+F. Each of them naturally works in the browser, so this just lists them (desktop only).
+- **Transform menu** — the single case button becomes a small Transform menu: UPPERCASE, lowercase, Title Case, Sentence case, Trim whitespace, Remove empty lines. Every transformation syncs to all devices and is undoable.
+- **Mobile bottom action bar** — undo (↶) and redo (↷) move from the topbar to the bottom, with arrow symbols instead of text; the Transform menu opens from a ⋮ button at the bottom centre, all on one row. Mobile topbar is decluttered.
+- **Keyboard shortcut reference** — desktop only: a "keys" panel listing the expected shortcuts (Ctrl+A select all, Ctrl+C copy, Ctrl+V paste, Ctrl+Z undo, Ctrl+Y redo, Ctrl+F find), each of which works natively in the browser.
+
+### Other
+
+- Version 0.9.0.
 
 ---
 

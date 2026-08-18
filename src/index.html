@@ -15,8 +15,6 @@
     <div class="devices" id="devices" aria-label="connected phones"></div>
     <div class="topbar-actions">
       <button class="btn btn-sm" id="collapse-btn" type="button">hide qr</button>
-      <button class="btn btn-sm top-undo" id="top-undo" type="button" disabled>undo</button>
-      <button class="btn btn-sm top-redo" id="top-redo" type="button" disabled>redo</button>
       <button class="btn btn-sm top-copy" id="top-copy" type="button">copy</button>
       <button class="btn btn-sm top-paste" id="top-paste" type="button">paste</button>
       <button class="btn btn-sm top-clear" id="top-clear" type="button">clear</button>
@@ -26,7 +24,6 @@
       <button class="btn btn-sm top-size-reset size-reset" id="top-size-reset" type="button" hidden>size reset</button>
       <button class="btn btn-sm top-font font-toggle" id="top-font" type="button">font: system</button>
       <button class="btn btn-sm top-wrap wrap-toggle" id="top-wrap" type="button">wrap on</button>
-      <button class="btn btn-sm top-case case-toggle" id="top-case" type="button" aria-label="change case">Aa</button>
       <button class="btn btn-sm top-history" id="top-history" type="button">history</button>
       <button class="btn btn-sm reset-btn top-reset" id="top-reset" type="button" hidden>start new session</button>
       <button class="btn btn-sm btn-icon" id="theme-btn" type="button" aria-label="switch theme">&#9788;</button>
@@ -64,8 +61,9 @@
       <footer class="footer">
         <p class="footer-hint" id="footer-hint">start typing — text syncs instantly</p>
         <div class="footer-actions">
-          <button class="btn btn-sm undo-btn" id="undo-btn" type="button" disabled>undo</button>
-          <button class="btn btn-sm redo-btn" id="redo-btn" type="button" disabled>redo</button>
+          <button class="btn btn-sm undo-btn" id="undo-btn" type="button" disabled aria-label="undo">&#8630; <span class="btn-txt">undo</span></button>
+          <button class="btn btn-sm transform-btn" id="transform-btn" type="button" aria-label="transform menu">transform</button>
+          <button class="btn btn-sm redo-btn" id="redo-btn" type="button" disabled aria-label="redo">&#8631; <span class="btn-txt">redo</span></button>
           <button class="btn btn-sm" id="copy-btn" type="button">copy</button>
           <button class="btn btn-sm" id="paste-btn" type="button">paste</button>
           <button class="btn btn-sm" id="clear-btn" type="button">clear</button>
@@ -74,13 +72,36 @@
           <button class="btn btn-sm size-reset" id="size-reset-btn" type="button" hidden>size reset</button>
           <button class="btn btn-sm font-toggle" id="font-btn" type="button">font: system</button>
           <button class="btn btn-sm wrap-toggle" id="wrap-btn" type="button">wrap on</button>
-          <button class="btn btn-sm case-toggle" id="case-btn" type="button" aria-label="change case">Aa</button>
+          <button class="btn btn-sm shortcuts-btn" id="shortcuts-btn" type="button" aria-label="keyboard shortcuts">keys</button>
           <button class="btn btn-sm reset-btn" id="reset-btn" type="button" hidden>start new session</button>
         </div>
         <p class="footer-count" id="footer-count">0 chars · 0 words</p>
       </footer>
     </section>
   </main>
+
+  <div class="transform-panel" id="shortcuts-panel" hidden>
+    <div class="transform-card" role="dialog" aria-label="keyboard shortcuts">
+      <h2 class="transform-title">shortcuts</h2>
+      <ul class="shortcuts-list">
+        <li><kbd>Ctrl</kbd>+<kbd>A</kbd> select all</li>
+        <li><kbd>Ctrl</kbd>+<kbd>C</kbd> copy</li>
+        <li><kbd>Ctrl</kbd>+<kbd>V</kbd> paste</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Y</kbd> redo</li>
+        <li><kbd>Ctrl</kbd>+<kbd>F</kbd> find</li>
+      </ul>
+      <button class="btn btn-sm" id="shortcuts-close" type="button">close</button>
+    </div>
+  </div>
+
+  <div class="transform-panel" id="transform-panel" hidden>
+    <div class="transform-card" role="dialog" aria-label="transform">
+      <h2 class="transform-title">transform</h2>
+      <div class="transform-list" id="transform-list"></div>
+      <button class="btn btn-sm" id="transform-close" type="button">close</button>
+    </div>
+  </div>
 
   <div class="history-panel" id="history-panel" hidden>
     <div class="history-card" role="dialog" aria-label="history">
