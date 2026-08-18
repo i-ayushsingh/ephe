@@ -1,12 +1,33 @@
 use std::net::SocketAddr;
 
 use axum::serve;
-use ephe::{net, server, session};
+use ephe::{manifest, net, server, session};
 use tokio::net::TcpListener;
+
+/// CLI contract for PortPeek. Today only `--new-session`, which is exactly
+/// what a plain `ephe.exe` launch already does: create a new normal session,
+/// start the server, publish the manifest, open the browser. Future commands
+/// (e.g. `--open-session <id>`) slot into this match.
+fn parse_args(args: &[String]) -> Result<(), String> {
+    match args {
+        [] => Ok(()),
+        [flag] if flag == "--new-session" => Ok(()),
+        [flag] => Err(format!("unknown argument: {flag}")),
+        _ => Err("too many arguments".into()),
+    }
+}
 
 #[tokio::main]
 async fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(e) = parse_args(&args) {
+        eprintln!("ephe: {e}");
+        eprintln!("usage: ephe.exe [--new-session]");
+        std::process::exit(1);
+    }
+
     let session = session::new_session();
+    let session_id = { session.lock().await.id.clone() };
 
     let port = net::pick_port();
     let (lan_ip, candidates) = net::pick_lan_ip();
@@ -23,6 +44,10 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // PortPeek discovery: clear crash leftovers, then announce this session.
+    manifest::sweep_stale();
+    manifest::publish(&session_id, port, 0);
 
     let router = server::build_router(session, port, lan_ip.clone());
 
@@ -57,5 +82,6 @@ async fn main() {
     println!("ephe: ctrl+c to quit");
 
     let _ = server_task.await;
+    manifest::remove(&session_id);
     println!("ephe: stopped");
 }

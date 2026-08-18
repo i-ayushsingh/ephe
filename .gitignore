@@ -12,6 +12,12 @@ Cargo.lock.bak
 /installer/Logo.png
 /installer/text-logo.png
 
+# Temporary installer (test build, OutFile swapped, deleted after)
+/installer/ephe-test.nsi
+
+# Test-installer output (separate from the release folder)
+/test-installer/
+
 # Release artifacts
 /release/
 

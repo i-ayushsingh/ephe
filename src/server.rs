@@ -20,6 +20,7 @@ use qrcode::render::svg;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
+use crate::manifest;
 use crate::session::{
     is_valid_token, random_id, random_token, Client, ClientMsg, DeviceInfo, MAX_MOBILES,
     ServerMsg, SharedSession,
@@ -150,11 +151,15 @@ fn find_named(name: &str) -> Option<PathBuf> {
 
 async fn reset(
     Query(q): Query<WsQuery>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> Response {
     let token = q.token.unwrap_or_default();
     let mut s = state.session.lock().await;
-    if !is_valid_token(&s, &token) {
+    // ponytail: loopback = the user's own machine, trusted exactly like the
+    // desktop WS join (tokenless). LAN clients still need the token — the
+    // host-only reset privilege never escapes to the network.
+    if !addr.ip().is_loopback() && !is_valid_token(&s, &token) {
         return StatusCode::FORBIDDEN.into_response();
     }
     let new_token = random_token();
@@ -235,6 +240,7 @@ async fn handle_socket(
     };
 
     let _ = tx.send(ServerMsg::Init { text: accepted, locked });
+    publish_manifest(&state).await;
     // ponytail: include the joiner so a second phone immediately shows as
     // connected (and gets the join toast) instead of staying "waiting".
     broadcast(&state, ServerMsg::PeerJoined, role, None).await;
@@ -422,6 +428,16 @@ async fn on_disconnect(
     for t in others {
         let _ = t.send(ServerMsg::PeerLeft);
     }
+    publish_manifest(state).await;
+}
+
+/// Refresh the PortPeek manifest after any join/leave (device count changed).
+async fn publish_manifest(state: &AppState) {
+    let (id, connected) = {
+        let s = state.session.lock().await;
+        (s.id.clone(), s.desktop.is_some() as usize + s.mobiles.len())
+    };
+    manifest::publish(&id, state.port, connected);
 }
 
 /// Send `msg` to every peer except `exclude` (the sender).

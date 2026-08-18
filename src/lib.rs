@@ -1,3 +1,4 @@
+pub mod manifest;
 pub mod net;
 pub mod server;
 pub mod session;

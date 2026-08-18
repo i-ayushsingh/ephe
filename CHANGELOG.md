@@ -11,7 +11,23 @@ Categories:
 
 ---
 
-## v0.9.0 (unreleased)
+## v0.10.0 (released)
+
+### Features added
+
+- **PortPeek integration** — ephe now pairs with [PortPeek](https://github.com/i-ayushsingh/PortPeek), a small utility for seeing and opening the apps running on your desktop. While an ephe session is running, you can see it as an active session in PortPeek and open it straight from there — no scanning, no copying links.
+- **Start a new session from PortPeek** — with ephe installed, PortPeek can start a brand-new ephe session on your desktop on demand.
+- **Open an existing session as the host** — clicking a running ephe session in PortPeek opens it as the desktop host (QR code and all host controls), not as a secondary device. The host URL stays safe by design: no session token ever leaves your machine, and only devices on your network with the token can join. (Warning: this may sometimes not work — the developer is still fixing it.)
+- **Better connection status** — the status dot now tells you what is actually happening: "connected · 2 phones" when everything is fine (with the phone count), "reconnecting…" and "connection lost" when the connection drops, and "session ended" when the session is over. If the connection drops briefly, ephe tries to get you back in automatically — you land in a fresh pad instead of a dead screen.
+- **Char/word/line statistics** — the counter now also shows the line count: "1,248 chars · 214 words · 38 lines".
+
+### Other
+
+- Version 0.10.0.
+
+---
+
+## v0.9.0 (released)
 
 ### Features added
 
@@ -25,7 +41,7 @@ Categories:
 
 ---
 
-## v0.8.0 (unreleased)
+## v0.8.0 (released)
 
 ### Features added
 

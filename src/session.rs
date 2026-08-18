@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub type SharedSession = Arc<Mutex<Session>>;
 
 pub struct Session {
+    /// stable per-process session id (PortPeek manifest filename)
+    pub id: String,
     pub token: String,
     pub text: String,
     pub desktop: Option<Client>,
@@ -78,6 +80,7 @@ pub enum ClientMsg {
 pub fn new_session() -> SharedSession {
     let token = random_token();
     Arc::new(Mutex::new(Session {
+        id: random_id(),
         token,
         text: String::new(),
         desktop: None,

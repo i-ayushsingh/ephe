@@ -57,7 +57,9 @@ function updateCounter() {
   if (!footerCount) return;
   const t = editor.value;
   const words = t.trim() ? t.trim().split(/\s+/).length : 0;
-  footerCount.textContent = `${t.length} chars · ${words} words`;
+  const lines = t ? t.split("\n").length : 0;
+  footerCount.textContent =
+    `${t.length.toLocaleString()} chars · ${words} words · ${lines} lines`;
 }
 
 // ---------- collapse the QR panel (desktop) ----------
@@ -298,14 +300,21 @@ if (footerHint) {
 
 const captions = {
   waiting: "scan to connect a phone",
-  connected: "phone connected",
+  connected: "",
+  lost: "connection lost — check your network",
+  reconnecting: "check your network",
   error: "session ended",
 };
+
+function phoneLabel(n) {
+  if (!n) return "connected";
+  return "connected · " + n + (n === 1 ? " phone" : " phones");
+}
 
 function setStatus(state, label) {
   statusEl.dataset.state = state;
   statusLabel.textContent = label;
-  if (captionEl) captionEl.textContent = captions[label] || "";
+  if (captionEl) captionEl.textContent = captions[state] || "";
 }
 
 function showReset() {
@@ -334,12 +343,54 @@ for (const resetBtn of document.querySelectorAll(".reset-btn")) {
 
 const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
 const wsUrl = `${wsProto}//${location.host}/ws?token=${encodeURIComponent(token)}`;
-const ws = new WebSocket(wsUrl);
+let ws = null;
+let retryCount = 0;
+let everJoined = false;
+
+function connect() {
+  const sock = new WebSocket(wsUrl);
+  ws = sock;
+  sock.addEventListener("open", () => {
+    retryCount = 0;
+    document.body.classList.remove("loading");
+    setStatus("idle", "waiting");
+    if (everJoined) {
+      everJoined = false;
+      toast("reconnected — fresh pad");
+    }
+  });
+  sock.addEventListener("message", onMessage);
+  sock.addEventListener("close", () => onDrop(sock));
+  sock.addEventListener("error", () => onDrop(sock));
+}
+
+// ponytail: any disconnect wipes the session, so "reconnecting" never resumes
+// text — but it does land you back in a fresh pad instead of a dead screen
+// (the wipe frees the desktop slot and keeps the token valid). Bounded
+// retries; terminal states (error/peer_left/kicked/reset) never retry.
+function onDrop(sock) {
+  if (statusEl.dataset.state === "error") return;
+  if (ws !== sock || sock._dropped) return; // superseded or already handled
+  sock._dropped = true;
+  if (retryCount >= 3) {
+    editor.readOnly = true;
+    showReset();
+    setStatus("error", "session ended");
+    return;
+  }
+  retryCount++;
+  setStatus("lost", "connection lost");
+  setTimeout(() => {
+    setStatus("reconnecting", "reconnecting\u2026");
+    connect();
+  }, 700 * retryCount);
+}
 
 let applying = false;
 let lastSent = "";
 let lastTypingSent = 0;
 let peerCount = 0;
+let joinedSelf = false;
 let padLocked = false;
 // read receipts: which peers have seen my most recent text
 let seenRoundTrip = new Set();
@@ -605,16 +656,13 @@ if (shortcutsPanel) {
 }
 document.getElementById("shortcuts-close").addEventListener("click", hideShortcuts);
 
-ws.addEventListener("open", () => {
-  document.body.classList.remove("loading");
-  setStatus("idle", "waiting");
-});
-
-ws.addEventListener("message", (ev) => {
+function onMessage(ev) {
   let msg;
   try { msg = JSON.parse(ev.data); } catch { return; }
   switch (msg.type) {
     case "init":
+      everJoined = true;
+      joinedSelf = false;
       applying = true;
       editor.value = msg.text || "";
       lastSent = editor.value;
@@ -664,31 +712,37 @@ ws.addEventListener("message", (ev) => {
       applyLock();
       break;
     case "peer_joined":
-      peerCount++;
-      setStatus("connected", "connected");
-      if (isDesktop && captionEl) {
-        captionEl.textContent = peerCount === 1 ? "1 phone connected" : peerCount + " phones connected";
+      if (isDesktop) {
+        // the desktop's own join also arrives here; the authoritative phone
+        // count comes with the devices list right after
+        if (!joinedSelf) joinedSelf = true;
+        else toast("phone connected");
+      } else {
+        peerCount++;
+        setStatus("connected", phoneLabel(peerCount));
       }
-      toast("phone connected");
       break;
     case "peer_left":
       peerCount = 0;
-      setStatus("error", "error");
+      joinedSelf = false;
       editor.readOnly = true;
       showReset();
       if (devicesEl) devicesEl.textContent = "";
+      setStatus("error", "session ended");
       break;
     case "devices":
       renderDevices(msg.devices);
+      if (isDesktop) setStatus("connected", phoneLabel(msg.devices.length));
       break;
     case "seen":
       seenRoundTrip.add(msg.label);
       showHint("seen on " + [...seenRoundTrip].join(" & "));
       break;
     case "kicked":
-      // the desktop removed this phone from the session
+      // the desktop removed this phone from the session; terminal, no reconnect
       editor.readOnly = true;
       showHint("removed by desktop", true);
+      setStatus("error", "session ended");
       break;
     case "reset":
       // server rotated the session and told us to navigate to the new URL
@@ -704,19 +758,7 @@ ws.addEventListener("message", (ev) => {
       showReset();
       break;
   }
-});
-
-ws.addEventListener("close", () => {
-  editor.readOnly = true;
-  showReset();
-  if (statusEl.dataset.state !== "error") setStatus("error", "error");
-});
-
-ws.addEventListener("error", () => {
-  editor.readOnly = true;
-  showReset();
-  if (statusEl.dataset.state !== "error") setStatus("error", "error");
-});
+}
 
 let sendTimer = null;
 editor.addEventListener("input", () => {
@@ -752,3 +794,5 @@ if (!isDesktop) {
     });
   });
 }
+
+connect();
