@@ -21,12 +21,12 @@ const collapseBtn = document.getElementById("collapse-btn");
 const hintEl = document.getElementById("editor-hint");
 let hintTimer = null;
 
-function showHint(text) {
+function showHint(text, sticky) {
   if (!hintEl) return;
   hintEl.textContent = text;
   hintEl.hidden = false;
   clearTimeout(hintTimer);
-  hintTimer = setTimeout(() => { hintEl.hidden = true; }, 2000);
+  if (!sticky) hintTimer = setTimeout(() => { hintEl.hidden = true; }, 2000);
 }
 
 function hideHint() {
@@ -215,6 +215,16 @@ function applyTextSize() {
   textSize = Math.min(MAX_SIZE, Math.max(MIN_SIZE, textSize));
   editor.style.fontSize = textSize + "px";
   localStorage.setItem(SIZE_KEY, String(textSize));
+  for (const b of document.querySelectorAll(".size-reset")) {
+    b.hidden = textSize === 16;
+  }
+}
+
+for (const btn of document.querySelectorAll(".size-reset")) {
+  btn.addEventListener("click", () => {
+    textSize = 16;
+    applyTextSize();
+  });
 }
 
 for (const btn of document.querySelectorAll(".top-size, #size-up-btn, #size-down-btn")) {
@@ -305,6 +315,86 @@ for (const btn of document.querySelectorAll(".lock-btn")) {
   });
 }
 
+// ---------- time-travel undo (desktop) ----------
+// ponytail: client-side snapshot history — every settled state (debounced
+// 1.5s) is captured and can be restored, which broadcasts the old text to
+// everyone. Cap 50 snapshots; the desktop reloading loses history, fine for
+// an ephemeral pad.
+
+const historyPanel = document.getElementById("history-panel");
+const historyList = document.getElementById("history-list");
+const historyEmpty = document.getElementById("history-empty");
+const HISTORY_CAP = 50;
+let history = [];
+let historyTimer = null;
+
+function captureHistory() {
+  if (!isDesktop) return;
+  clearTimeout(historyTimer);
+  historyTimer = setTimeout(() => {
+    const last = history[history.length - 1];
+    if (last && last.text === editor.value) return;
+    history.push({ text: editor.value, ts: Date.now() });
+    if (history.length > HISTORY_CAP) history.shift();
+    renderHistory();
+  }, 1500);
+}
+
+function renderHistory() {
+  if (!historyList) return;
+  historyList.textContent = "";
+  historyEmpty.hidden = history.length > 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const snap = history[i];
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "history-item";
+    const time = document.createElement("span");
+    time.className = "history-time";
+    time.textContent = new Date(snap.ts).toLocaleTimeString();
+    b.appendChild(time);
+    b.appendChild(document.createTextNode(` · ${snap.text.length} chars`));
+    b.addEventListener("click", () => restoreSnapshot(snap));
+    li.appendChild(b);
+    historyList.appendChild(li);
+  }
+}
+
+function hideHistory() {
+  if (historyPanel) historyPanel.hidden = true;
+}
+
+function restoreSnapshot(snap) {
+  if (!confirm(`Restore the pad to its state from ${new Date(snap.ts).toLocaleTimeString()}?`)) return;
+  applying = true;
+  editor.value = snap.text;
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+  lastSent = editor.value;
+  applying = false;
+  updateCounter();
+  if (ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: "text", text: editor.value }));
+  }
+  toast("restored!");
+  hideHistory();
+  captureHistory();
+}
+
+const historyBtn = document.getElementById("top-history");
+if (historyBtn) {
+  historyBtn.addEventListener("click", () => {
+    renderHistory();
+    historyPanel.hidden = false;
+  });
+}
+document.getElementById("history-close").addEventListener("click", hideHistory);
+if (historyPanel) {
+  historyPanel.addEventListener("click", (e) => {
+    if (e.target === historyPanel) hideHistory();
+  });
+}
+
 ws.addEventListener("open", () => {
   document.body.classList.remove("loading");
   setStatus("idle", "waiting");
@@ -322,6 +412,7 @@ ws.addEventListener("message", (ev) => {
       applyLock();
       applying = false;
       updateCounter();
+      captureHistory();
       if (isDesktop) editor.focus({ preventScroll: true });
       break;
     case "text":
@@ -345,6 +436,7 @@ ws.addEventListener("message", (ev) => {
       lastSent = editor.value;
       applying = false;
       updateCounter();
+      captureHistory();
       break;
     case "typing":
       showHint("someone is typing\u2026");
@@ -376,6 +468,7 @@ ws.addEventListener("message", (ev) => {
       // phones hide the status label, so the reason goes in a toast
       toast(msg.reason || "session ended");
       if (isDesktop && captionEl) captionEl.textContent = msg.reason || "session ended";
+      if (!isDesktop) showHint(msg.reason || "session ended", true);
       editor.readOnly = true;
       showReset();
       break;
@@ -414,6 +507,7 @@ editor.addEventListener("input", () => {
       ws.send(JSON.stringify({ type: "text", text: editor.value }));
     }
   }, 16);
+  captureHistory();
 });
 
 // ponytail: keep the editor on screen when the mobile keyboard opens.

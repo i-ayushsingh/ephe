@@ -20,6 +20,8 @@
       <button class="btn btn-sm lock-btn" id="top-lock" type="button">lock pad</button>
       <button class="btn btn-sm top-size" id="top-size-down" type="button" aria-label="decrease text size">A&minus;</button>
       <button class="btn btn-sm top-size" id="top-size-up" type="button" aria-label="increase text size">A+</button>
+      <button class="btn btn-sm top-size-reset size-reset" id="top-size-reset" type="button" hidden>size reset</button>
+      <button class="btn btn-sm top-history" id="top-history" type="button">history</button>
       <button class="btn btn-sm reset-btn top-reset" id="top-reset" type="button" hidden>start new session</button>
       <button class="btn btn-sm btn-icon" id="theme-btn" type="button" aria-label="switch theme">&#9788;</button>
       <span class="status" id="status" aria-live="polite">
@@ -61,12 +63,22 @@
           <button class="btn btn-sm" id="clear-btn" type="button">clear</button>
           <button class="btn btn-sm" id="size-down-btn" type="button" aria-label="decrease text size">A&minus;</button>
           <button class="btn btn-sm" id="size-up-btn" type="button" aria-label="increase text size">A+</button>
+          <button class="btn btn-sm size-reset" id="size-reset-btn" type="button" hidden>size reset</button>
           <button class="btn btn-sm reset-btn" id="reset-btn" type="button" hidden>start new session</button>
         </div>
         <p class="footer-count" id="footer-count">0 chars · 0 words</p>
       </footer>
     </section>
   </main>
+
+  <div class="history-panel" id="history-panel" hidden>
+    <div class="history-card" role="dialog" aria-label="history">
+      <h2 class="history-title">history</h2>
+      <p class="history-empty" id="history-empty">nothing to show yet — start typing</p>
+      <ul class="history-list" id="history-list"></ul>
+      <button class="btn btn-sm" id="history-close" type="button">close</button>
+    </div>
+  </div>
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
   <script src="/app.js"></script>

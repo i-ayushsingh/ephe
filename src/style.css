@@ -43,6 +43,10 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* the hidden attribute must win over display rules on the same element
+   (e.g. .history-panel and .url-row are display:flex when shown) */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -110,6 +114,7 @@ body.role-desktop .top-copy,
 body.role-desktop .top-paste,
 body.role-desktop .top-clear,
 body.role-desktop .top-size,
+body.role-desktop .top-size-reset,
 body.role-desktop .top-reset { display: none; }
 
 body.role-desktop.qr-collapsed .qr-panel { display: none; }
@@ -385,6 +390,79 @@ body.role-mobile .footer { display: none; }
 }
 
 body.role-mobile .lock-btn { display: none; }
+
+/* history (time-travel undo) is desktop-only */
+body.role-mobile .top-history { display: none; }
+
+.history-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  padding: var(--space-lg);
+}
+
+body.role-mobile .history-panel { display: none; }
+
+.history-card {
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 360px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+}
+
+.history-title {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.history-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: border-color var(--duration) var(--easing);
+}
+
+.history-item:hover { border-color: var(--fg); }
+.history-item .history-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.history-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--faint);
+  text-align: center;
+  padding: var(--space-md) 0;
+}
 
 .btn-sm { padding: 6px 10px; font-size: 12px; }
 .btn-icon { padding: 6px 9px; line-height: 1; }

@@ -11,7 +11,17 @@ Categories:
 
 ---
 
-## v0.5.0 (unreleased)
+## v0.6.0 (unreleased)
+
+### Features added
+
+- **Text-size reset** — when A−/A+ move the text size away from default, a "size reset" button appears next to them (footer on desktop, topbar on mobile) and snaps it back to 16px.
+- **Third-phone inline rejection** — a third mobile is now turned away at the join screen with a persistent "session full" notice over the editor instead of a flash toast and a dead pad.
+- **Time-travel undo (desktop)** — ephe keeps a rolling history of the pad (a snapshot every ~1.5s of activity, last 50 kept); the "history" button opens a timeline to restore any past state — restoring rewinds the pad for everyone.
+
+---
+
+## v0.5.0 (released)
 
 ### UI/UX changes or overhaul
 
