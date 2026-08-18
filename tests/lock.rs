@@ -44,6 +44,7 @@ async fn desktop_lock_is_relayed_and_phone_lock_is_ignored() {
 
     let mut desktop = connect(&format!("ws://127.0.0.1:{port}/ws?token={token}")).await;
     assert_eq!(recv_json(&mut desktop).await["type"], "init");
+    assert_eq!(recv_json(&mut desktop).await["type"], "devices"); // own join, empty list
 
     let mut phone = connect(&format!("ws://{lan_ip}:{port}/ws?token={token}")).await;
     assert_eq!(recv_json(&mut phone).await["type"], "init");
@@ -51,6 +52,7 @@ async fn desktop_lock_is_relayed_and_phone_lock_is_ignored() {
     assert_eq!(m["type"], "peer_joined");
     let m = recv_json(&mut desktop).await; // desktop hears the phone's join
     assert_eq!(m["type"], "peer_joined");
+    assert_eq!(recv_json(&mut desktop).await["type"], "devices"); // phone 1 listed
 
     // desktop locks -> phone sees it
     desktop

@@ -4,7 +4,7 @@
 //! WebSocket handler uses, against synthetic channel senders — no real socket
 //! or network required.
 
-use ephe::session::{is_valid_token, new_session, random_token, ClientMsg, ServerMsg};
+use ephe::session::{is_valid_token, new_session, random_token, ClientMsg, DeviceInfo, ServerMsg};
 use ephe::test_support::{accept, on_disconnect_for, reset_for};
 use tokio::sync::mpsc;
 
@@ -171,6 +171,23 @@ fn server_msg_serializes_with_type_tag() {
     let j = serde_json::to_string(&s).unwrap();
     assert!(j.contains(r#""type":"reset""#));
     assert!(j.contains(r#""url":"http://localhost:1234/?token=abc""#));
+
+    let s = ServerMsg::Devices {
+        devices: vec![DeviceInfo { id: "aabbccdd".into(), label: "phone 1".into() }],
+    };
+    let j = serde_json::to_string(&s).unwrap();
+    assert!(j.contains(r#""type":"devices""#));
+    assert!(j.contains(r#""label":"phone 1""#));
+    assert!(j.contains(r#""id":"aabbccdd""#));
+
+    let s = ServerMsg::Seen { label: "phone 2".into() };
+    assert_eq!(
+        serde_json::to_string(&s).unwrap(),
+        r#"{"type":"seen","label":"phone 2"}"#
+    );
+
+    let s = ServerMsg::Kicked;
+    assert_eq!(serde_json::to_string(&s).unwrap(), r#"{"type":"kicked"}"#);
 }
 
 #[test]
@@ -187,4 +204,10 @@ fn client_msg_deserializes() {
 
     let m: ClientMsg = serde_json::from_str(r#"{"type":"lock","locked":true}"#).unwrap();
     assert!(matches!(m, ClientMsg::Lock { locked: true }));
+
+    let m: ClientMsg = serde_json::from_str(r#"{"type":"kick","id":"aabbccdd"}"#).unwrap();
+    assert!(matches!(m, ClientMsg::Kick { id } if id == "aabbccdd"));
+
+    let m: ClientMsg = serde_json::from_str(r#"{"type":"ack"}"#).unwrap();
+    assert!(matches!(m, ClientMsg::Ack));
 }

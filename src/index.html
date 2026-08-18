@@ -12,8 +12,11 @@
 <body class="role-desktop loading">
   <header class="topbar">
     <span class="brand"><img src="/text-logo.png" alt="ephe" width="88" height="20"></span>
+    <div class="devices" id="devices" aria-label="connected phones"></div>
     <div class="topbar-actions">
       <button class="btn btn-sm" id="collapse-btn" type="button">hide qr</button>
+      <button class="btn btn-sm top-undo" id="top-undo" type="button" disabled>undo</button>
+      <button class="btn btn-sm top-redo" id="top-redo" type="button" disabled>redo</button>
       <button class="btn btn-sm top-copy" id="top-copy" type="button">copy</button>
       <button class="btn btn-sm top-paste" id="top-paste" type="button">paste</button>
       <button class="btn btn-sm top-clear" id="top-clear" type="button">clear</button>
@@ -58,6 +61,8 @@
       <footer class="footer">
         <p class="footer-hint" id="footer-hint">start typing — text syncs instantly</p>
         <div class="footer-actions">
+          <button class="btn btn-sm undo-btn" id="undo-btn" type="button" disabled>undo</button>
+          <button class="btn btn-sm redo-btn" id="redo-btn" type="button" disabled>redo</button>
           <button class="btn btn-sm" id="copy-btn" type="button">copy</button>
           <button class="btn btn-sm" id="paste-btn" type="button">paste</button>
           <button class="btn btn-sm" id="clear-btn" type="button">clear</button>

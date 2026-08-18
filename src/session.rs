@@ -18,7 +18,16 @@ pub struct Session {
 pub const MAX_MOBILES: usize = 2;
 
 pub struct Client {
+    pub id: String,
     pub tx: tokio::sync::mpsc::UnboundedSender<ServerMsg>,
+}
+
+/// What the desktop's device list shows: which phones are connected, and how
+/// to address them (kick by id, label for display / read receipts).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeviceInfo {
+    pub id: String,
+    pub label: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,6 +47,15 @@ pub enum ServerMsg {
     PeerLeft,
     #[serde(rename = "reset")]
     Reset { url: String },
+    /// connected phones, for the desktop's device list (kicks included)
+    #[serde(rename = "devices")]
+    Devices { devices: Vec<DeviceInfo> },
+    /// a phone received someone's text — a read receipt
+    #[serde(rename = "seen")]
+    Seen { label: String },
+    /// the desktop removed you from the session
+    #[serde(rename = "kicked")]
+    Kicked,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,6 +67,12 @@ pub enum ClientMsg {
     Typing,
     #[serde(rename = "lock")]
     Lock { locked: bool },
+    /// desktop-only: remove the phone with this id
+    #[serde(rename = "kick")]
+    Kick { id: String },
+    /// phone-only: "I just received your text" (read receipt)
+    #[serde(rename = "ack")]
+    Ack,
 }
 
 pub fn new_session() -> SharedSession {
@@ -71,4 +95,11 @@ pub fn random_token() -> String {
     let mut rng = rand::rng();
     let bytes: [u8; 24] = rng.random();
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+pub fn random_id() -> String {
+    use rand::Rng;
+    let mut rng = rand::rng();
+    let n: u32 = rng.random();
+    format!("{:08x}", n)
 }

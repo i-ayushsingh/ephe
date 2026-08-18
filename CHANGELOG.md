@@ -11,7 +11,33 @@ Categories:
 
 ---
 
-## v0.6.0 (unreleased)
+## v0.8.0 (unreleased)
+
+### Features planned
+
+- **Font toggle** — choose between 5 fonts: 4 common fonts (e.g., system sans, serif, mono, handwriting-style) plus one pixel/retro font that echoes the ephe logo look.
+- **Word wrap toggle** — switch the editor between wrapped and non-wrapped (horizontal scroll) lines.
+- **Case conversion** — one click to turn the whole text uppercase, one click to lowercase, one click back to normal.
+
+---
+
+## v0.7.0 (released)
+
+### Features added
+
+- **Quick undo / redo** — dedicated undo and redo buttons (topbar on mobile, footer on desktop) step back and forward through your last 5 edits instantly, synced to every device.
+- **Time-travel restore fixed & one-click** — restoring an old history snapshot no longer needs a confirm dialog and always applies to the whole session (the previous confirm flow could misbehave in some browsers and leave peers out of sync); a dead session shows "session ended" instead of silently changing only one device.
+- **Connected phones bar** — the topbar's center shows the connected phones (phone 1 · phone 2); each has an × the desktop can click to remove it from the session.
+- **Read receipts** — when a peer's browser round-trips your text, a "seen on phone 1 & phone 2" pill appears over the editor; useful with two phones to know who actually got it.
+
+### Other
+
+- Version 0.7.0.
+- New integration test: devices list, seen receipts, and kick flow over live WebSockets (13 tests total).
+
+---
+
+## v0.6.0 (released)
 
 ### Features added
 

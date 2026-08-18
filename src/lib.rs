@@ -22,7 +22,7 @@ pub mod test_support {
             if s.desktop.is_some() {
                 return Err("desktop already connected");
             }
-            s.desktop = Some(Client { tx });
+            s.desktop = Some(Client { id: crate::session::random_id(), tx });
             Ok(())
         } else {
             if !crate::session::is_valid_token(s, token) {
@@ -31,7 +31,7 @@ pub mod test_support {
             if s.mobiles.len() >= crate::session::MAX_MOBILES {
                 return Err("session full: max 2 mobiles");
             }
-            s.mobiles.push(Client { tx });
+            s.mobiles.push(Client { id: crate::session::random_id(), tx });
             Ok(())
         }
     }

@@ -97,6 +97,47 @@ body:not(.loading) main {
   filter: invert(1); /* white text-logo on light header */
 }
 
+/* connected-phones bar, centered between brand and actions */
+.devices {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+body.role-mobile .devices { display: none; }
+
+.device-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  white-space: nowrap;
+}
+
+.device-remove {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.device-remove:hover { color: var(--fg); background: var(--line); }
+
 :root[data-theme="dark"] .brand img { filter: none; }
 
 @media (prefers-color-scheme: dark) {
@@ -110,6 +151,8 @@ body:not(.loading) main {
 }
 
 /* desktop action buttons live in the footer; the topbar copies are mobile-only */
+body.role-desktop .top-undo,
+body.role-desktop .top-redo,
 body.role-desktop .top-copy,
 body.role-desktop .top-paste,
 body.role-desktop .top-clear,

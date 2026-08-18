@@ -292,6 +292,8 @@ let lastSent = "";
 let lastTypingSent = 0;
 let peerCount = 0;
 let padLocked = false;
+// read receipts: which peers have seen my most recent text
+let seenRoundTrip = new Set();
 
 function applyLock() {
   if (!isDesktop) editor.readOnly = padLocked;
@@ -355,7 +357,10 @@ function renderHistory() {
     time.textContent = new Date(snap.ts).toLocaleTimeString();
     b.appendChild(time);
     b.appendChild(document.createTextNode(` · ${snap.text.length} chars`));
-    b.addEventListener("click", () => restoreSnapshot(snap));
+    b.addEventListener("click", (e) => {
+      e.preventDefault();
+      restoreSnapshot(snap);
+    });
     li.appendChild(b);
     historyList.appendChild(li);
   }
@@ -365,20 +370,108 @@ function hideHistory() {
   if (historyPanel) historyPanel.hidden = true;
 }
 
-function restoreSnapshot(snap) {
-  if (!confirm(`Restore the pad to its state from ${new Date(snap.ts).toLocaleTimeString()}?`)) return;
+// ---------- shared "apply a text state and broadcast it" ----------
+// used by restore, undo and redo; never applies locally when the WS is dead
+
+function applyTextBroadcast(text, okLabel) {
+  if (ws.readyState !== 1) {
+    toast("session ended");
+    return false;
+  }
   applying = true;
-  editor.value = snap.text;
-  editor.setSelectionRange(editor.value.length, editor.value.length);
-  lastSent = editor.value;
+  editor.value = text;
+  editor.setSelectionRange(text.length, text.length);
+  lastSent = text;
   applying = false;
   updateCounter();
-  if (ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: "text", text: editor.value }));
-  }
-  toast("restored!");
-  hideHistory();
+  seenRoundTrip.clear();
+  ws.send(JSON.stringify({ type: "text", text }));
+  if (okLabel) toast(okLabel);
   captureHistory();
+  return true;
+}
+
+function restoreSnapshot(snap) {
+  commitHistory(editor.value);
+  if (applyTextBroadcast(snap.text, "restored!")) hideHistory();
+  updateUndoRedo();
+}
+
+// ---------- quick undo / redo (max 5 levels each) ----------
+
+const MAX_UNDO = 5;
+let undoStack = [];
+let redoStack = [];
+
+function commitHistory(oldText) {
+  if (oldText === editor.value) return;
+  if (undoStack[undoStack.length - 1] !== oldText) {
+    undoStack.push(oldText);
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+  }
+  redoStack = [];
+  updateUndoRedo();
+}
+
+function updateUndoRedo() {
+  for (const b of document.querySelectorAll(".undo-btn, .top-undo")) {
+    b.disabled = !undoStack.length;
+  }
+  for (const b of document.querySelectorAll(".redo-btn, .top-redo")) {
+    b.disabled = !redoStack.length;
+  }
+}
+
+function doUndo() {
+  const prev = undoStack.pop();
+  if (prev === undefined) return;
+  redoStack.push(editor.value);
+  if (redoStack.length > MAX_UNDO) redoStack.shift();
+  updateUndoRedo();
+  applyTextBroadcast(prev);
+}
+
+function doRedo() {
+  const next = redoStack.pop();
+  if (next === undefined) return;
+  undoStack.push(editor.value);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  updateUndoRedo();
+  applyTextBroadcast(next);
+}
+
+for (const btn of document.querySelectorAll(".undo-btn, .top-undo")) {
+  btn.addEventListener("click", doUndo);
+}
+for (const btn of document.querySelectorAll(".redo-btn, .top-redo")) {
+  btn.addEventListener("click", doRedo);
+}
+
+// ---------- connected-phones bar (desktop) ----------
+
+const devicesEl = document.getElementById("devices");
+
+function renderDevices(list) {
+  if (!devicesEl) return;
+  devicesEl.textContent = "";
+  for (const d of list || []) {
+    const chip = document.createElement("span");
+    chip.className = "device-chip";
+    const name = document.createElement("span");
+    name.textContent = d.label;
+    const rm = document.createElement("button");
+    rm.type = "button";
+    rm.className = "device-remove";
+    rm.setAttribute("aria-label", "remove " + d.label);
+    rm.textContent = "\u00D7";
+    rm.addEventListener("click", () => {
+      if (!confirm(`Remove ${d.label} from this session?`)) return;
+      ws.send(JSON.stringify({ type: "kick", id: d.id }));
+    });
+    chip.appendChild(name);
+    chip.appendChild(rm);
+    devicesEl.appendChild(chip);
+  }
 }
 
 const historyBtn = document.getElementById("top-history");
@@ -413,10 +506,14 @@ ws.addEventListener("message", (ev) => {
       applying = false;
       updateCounter();
       captureHistory();
+      undoStack = [];
+      redoStack = [];
+      updateUndoRedo();
       if (isDesktop) editor.focus({ preventScroll: true });
       break;
     case "text":
       if (msg.text === lastSent) break;
+      commitHistory(editor.value);
       // ponytail: keep the caret where it was (reading a scrolled-up spot)
       // unless it sat near the old end — only then jump to the new end.
       const prevLen = editor.value.length;
@@ -437,6 +534,10 @@ ws.addEventListener("message", (ev) => {
       applying = false;
       updateCounter();
       captureHistory();
+      // read receipt: I got this text — tell the peers (phones only)
+      if (!isDesktop && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "ack" }));
+      }
       break;
     case "typing":
       showHint("someone is typing\u2026");
@@ -458,6 +559,19 @@ ws.addEventListener("message", (ev) => {
       setStatus("error", "error");
       editor.readOnly = true;
       showReset();
+      if (devicesEl) devicesEl.textContent = "";
+      break;
+    case "devices":
+      renderDevices(msg.devices);
+      break;
+    case "seen":
+      seenRoundTrip.add(msg.label);
+      showHint("seen on " + [...seenRoundTrip].join(" & "));
+      break;
+    case "kicked":
+      // the desktop removed this phone from the session
+      editor.readOnly = true;
+      showHint("removed by desktop", true);
       break;
     case "reset":
       // server rotated the session and told us to navigate to the new URL
@@ -491,8 +605,11 @@ let sendTimer = null;
 editor.addEventListener("input", () => {
   updateCounter();
   if (applying) return;
+  const prev = lastSent;
   if (editor.value === lastSent) return;
   lastSent = editor.value;
+  seenRoundTrip.clear();
+  commitHistory(prev);
   if (ws.readyState !== 1) return;
   // ponytail: throttle typing pings — one per 800ms burst, the debounced text
   // send resolves the indicator anyway.

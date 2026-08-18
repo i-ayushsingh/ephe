@@ -21,7 +21,8 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::session::{
-    is_valid_token, random_token, Client, ClientMsg, MAX_MOBILES, ServerMsg, SharedSession,
+    is_valid_token, random_id, random_token, Client, ClientMsg, DeviceInfo, MAX_MOBILES,
+    ServerMsg, SharedSession,
 };
 
 struct AppState {
@@ -224,6 +225,13 @@ async fn handle_socket(
     // ponytail: include the joiner so a second phone immediately shows as
     // connected (and gets the join toast) instead of staying "waiting".
     broadcast(&state, ServerMsg::PeerJoined, role, None).await;
+    // the desktop needs the fresh device list (ids + labels) right after a join
+    {
+        let s = state.session.lock().await;
+        if let Some(d) = s.desktop.as_ref() {
+            let _ = d.tx.send(ServerMsg::Devices { devices: device_list(&s) });
+        }
+    }
 
     // Heartbeat: ping every `heartbeat_secs`; browsers auto-pong at the
     // protocol level (even in background tabs). A peer that stops answering
@@ -254,7 +262,7 @@ async fn handle_socket(
                 if sink.send(Message::Text(payload)).await.is_err() {
                     break;
                 }
-                if matches!(msg, ServerMsg::PeerLeft | ServerMsg::Reset { .. }) {
+                if matches!(msg, ServerMsg::PeerLeft | ServerMsg::Reset { .. } | ServerMsg::Kicked) {
                     should_close = true;
                     break;
                 }
@@ -284,6 +292,35 @@ async fn handle_socket(
                                         }
                                         broadcast(&state, ServerMsg::Locked { locked }, role, Some(&tx))
                                             .await;
+                                    }
+                                }
+                                ClientMsg::Ack => {
+                                    // a phone received someone's text; relay the
+                                    // read receipt to everyone but the acker
+                                    if role == "mobile" {
+                                        let label = {
+                                            let s = state.session.lock().await;
+                                            s.mobiles
+                                                .iter()
+                                                .position(|m| m.tx.same_channel(&tx))
+                                                .map(|i| format!("phone {}", i + 1))
+                                        };
+                                        if let Some(label) = label {
+                                            broadcast(&state, ServerMsg::Seen { label }, role, Some(&tx))
+                                                .await;
+                                        }
+                                    }
+                                }
+                                ClientMsg::Kick { id } => {
+                                    // desktop-only: remove the phone, it gets
+                                    // "kicked" and closes; its disconnect wipes
+                                    // the session and peer_lefts everyone (ephemeral)
+                                    if role == "desktop" {
+                                        let mut s = state.session.lock().await;
+                                        if let Some(pos) = s.mobiles.iter().position(|m| m.id == id) {
+                                            let kicked = s.mobiles.remove(pos);
+                                            let _ = kicked.tx.send(ServerMsg::Kicked);
+                                        }
                                     }
                                 }
                             }
@@ -320,7 +357,7 @@ fn accept_into_session(
         if s.desktop.is_some() {
             return Err("desktop already connected");
         }
-        s.desktop = Some(Client { tx });
+        s.desktop = Some(Client { id: random_id(), tx });
     } else {
         if !is_valid_token(s, token) {
             return Err("invalid token");
@@ -328,9 +365,20 @@ fn accept_into_session(
         if s.mobiles.len() >= MAX_MOBILES {
             return Err("session full: max 2 mobiles");
         }
-        s.mobiles.push(Client { tx });
+        s.mobiles.push(Client { id: random_id(), tx });
     }
     Ok(())
+}
+
+fn device_list(s: &crate::session::Session) -> Vec<DeviceInfo> {
+    s.mobiles
+        .iter()
+        .enumerate()
+        .map(|(i, m)| DeviceInfo {
+            id: m.id.clone(),
+            label: format!("phone {}", i + 1),
+        })
+        .collect()
 }
 
 async fn on_disconnect(

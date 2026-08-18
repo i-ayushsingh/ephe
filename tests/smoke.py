@@ -77,8 +77,8 @@ async def main():
                 assert txt == {"type": "text", "text": "from desktop"}
                 print("sync desktop->mobile ok", flush=True)
                 await mobile.send(json.dumps({"type": "text", "text": "from mobile"}))
-                txt = await asyncio.wait_for(desktop.recv(), timeout=3)
-                assert json.loads(txt) == {"type": "text", "text": "from mobile"}
+                txt = await recv_until(desktop, lambda j: j["type"] == "text")
+                assert txt == {"type": "text", "text": "from mobile"}
                 print("sync mobile->desktop ok", flush=True)
             pl = await recv_until(mobile, lambda j: j["type"] == "peer_left")
             print("MOBILE peer_left ok", flush=True)
