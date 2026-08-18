@@ -11,13 +11,32 @@ Categories:
 
 ---
 
-## v0.8.0 (unreleased)
+## v0.9.0 (unreleased)
 
 ### Features planned
 
-- **Font toggle** — choose between 5 fonts: 4 common fonts (e.g., system sans, serif, mono, handwriting-style) plus one pixel/retro font that echoes the ephe logo look.
-- **Word wrap toggle** — switch the editor between wrapped and non-wrapped (horizontal scroll) lines.
-- **Case conversion** — one click to turn the whole text uppercase, one click to lowercase, one click back to normal.
+- **More text transformations** — v0.8.0 already covers uppercase/lowercase/normal; extend it into a small Transform action instead of adding random buttons:
+  - UPPERCASE
+  - lowercase
+  - Title Case
+  - Sentence case
+  - Trim whitespace
+  - Remove empty lines
+- **Select All / keyboard shortcuts** — ephe has accumulated a lot of actions, but make the basic editor experience much stronger. Support the expected shortcuts: Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+Z, Ctrl+Y, Ctrl+F. Each of them naturally works in the browser, so this just lists them (desktop only).
+
+---
+
+## v0.8.0 (unreleased)
+
+### Features added
+
+- **Font toggle** — cycle between 5 editor fonts: system sans, serif, mono, cursive, and a pixel/retro font (Press Start 2P, OFL-licensed, bundled with the app) that echoes the ephe logo look. Per-device, remembered between sessions.
+- **Word wrap toggle** — switch the editor between wrapped lines and hard line breaks with horizontal scroll. Per-device, remembered.
+- **Case conversion** — one click turns the whole text UPPERCASE, the next lowercase, the next back to the original case; each change syncs to every device and is undoable.
+
+### Other
+
+- Version 0.8.0.
 
 ---
 

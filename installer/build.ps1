@@ -16,6 +16,8 @@ cargo build --release
 Copy-Item "target\release\ephe.exe" "installer\ephe.exe" -Force
 Copy-Item "Logo.png" "installer\Logo.png" -Force
 Copy-Item "text-logo.png" "installer\text-logo.png" -Force
+Copy-Item "PressStart2P-Regular.ttf" "installer\PressStart2P-Regular.ttf" -Force
+Copy-Item "PressStart2P-Regular.ttf" "target\release\PressStart2P-Regular.ttf" -Force
 
 Write-Host "==> makensis"
 Set-Location installer
@@ -26,7 +28,8 @@ Write-Host "==> packing portable"
 New-Item -ItemType Directory -Path "release" -Force | Out-Null
 Copy-Item "Logo.png" "release\Logo.png" -Force
 Copy-Item "text-logo.png" "release\text-logo.png" -Force
-Compress-Archive -Path "target\release\ephe.exe", "release\Logo.png", "release\text-logo.png" `
+Copy-Item "PressStart2P-Regular.ttf" "release\PressStart2P-Regular.ttf" -Force
+Compress-Archive -Path "target\release\ephe.exe", "release\Logo.png", "release\text-logo.png", "release\PressStart2P-Regular.ttf" `
                  -DestinationPath "release\ephe-portable.zip" -Force
 
 Write-Host "==> SHA256SUMS"

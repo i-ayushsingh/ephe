@@ -28,6 +28,7 @@ Section "Install" SecInstall
   File "ephe.exe"
   File "Logo.png"
   File "text-logo.png"
+  File "PressStart2P-Regular.ttf"
   File "Logo.ico"
   WriteUninstaller "$INSTDIR\uninst.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "DisplayName" "ephe"
@@ -35,7 +36,7 @@ Section "Install" SecInstall
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "UninstallString" "$\"$INSTDIR\uninst.exe$\""
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "Publisher" "ephe"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "DisplayVersion" "0.7.0"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "DisplayVersion" "0.8.0"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "NoRepair" 1
 SectionEnd
@@ -52,6 +53,7 @@ Section "Uninstall"
   Delete "$INSTDIR\ephe.exe"
   Delete "$INSTDIR\Logo.png"
   Delete "$INSTDIR\text-logo.png"
+  Delete "$INSTDIR\PressStart2P-Regular.ttf"
   Delete "$INSTDIR\Logo.ico"
   Delete "$INSTDIR\uninst.exe"
   RMDir "$INSTDIR"

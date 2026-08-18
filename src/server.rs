@@ -50,6 +50,7 @@ pub fn build_router(
         .route("/app.js", get(js))
         .route("/logo.png", get(logo))
         .route("/text-logo.png", get(text_logo))
+        .route("/font.ttf", get(pixel_font))
         .route("/qr", get(qr))
         .route("/url", get(mobile_url))
         .route("/reset", post(reset))
@@ -104,6 +105,18 @@ async fn text_logo() -> Response {
     match path {
         Some(p) => match std::fs::read(&p) {
             Ok(bytes) => ([("content-type", "image/png")], bytes).into_response(),
+            Err(_) => StatusCode::NOT_FOUND.into_response(),
+        },
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// The bundled pixel font (Press Start 2P, OFL) for the "pixel" editor font.
+async fn pixel_font() -> Response {
+    let path = find_named("PressStart2P-Regular.ttf");
+    match path {
+        Some(p) => match std::fs::read(&p) {
+            Ok(bytes) => ([("content-type", "font/ttf")], bytes).into_response(),
             Err(_) => StatusCode::NOT_FOUND.into_response(),
         },
         None => StatusCode::NOT_FOUND.into_response(),

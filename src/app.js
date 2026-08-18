@@ -241,6 +241,55 @@ for (const btn of document.querySelectorAll(".top-size, #size-up-btn, #size-down
 }
 applyTextSize();
 
+// ---------- font toggle (per-device, 4 common + 1 bundled pixel) ----------
+
+const FONTS = [
+  { key: "system", family: "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif" },
+  { key: "serif", family: "Georgia, 'Times New Roman', serif" },
+  { key: "mono", family: "ui-monospace, 'Cascadia Mono', Consolas, monospace" },
+  { key: "cursive", family: "'Comic Sans MS', 'Segoe Script', cursive" },
+  { key: "pixel", family: "'Pixel Logo', 'Press Start 2P', monospace" },
+];
+const FONT_KEY = "ephe-font";
+let fontIdx = Math.max(0, FONTS.findIndex((f) => f.key === localStorage.getItem(FONT_KEY)));
+
+function applyFont() {
+  editor.style.fontFamily = FONTS[fontIdx].family;
+  localStorage.setItem(FONT_KEY, FONTS[fontIdx].key);
+  for (const b of document.querySelectorAll(".font-toggle")) {
+    b.textContent = "font: " + FONTS[fontIdx].key;
+  }
+}
+
+for (const btn of document.querySelectorAll(".font-toggle")) {
+  btn.addEventListener("click", () => {
+    fontIdx = (fontIdx + 1) % FONTS.length;
+    applyFont();
+  });
+}
+applyFont();
+
+// ---------- word wrap toggle (per-device) ----------
+
+const WRAP_KEY = "ephe-wrap";
+let wrapOn = localStorage.getItem(WRAP_KEY) !== "0";
+
+function applyWrap() {
+  editor.classList.toggle("no-wrap", !wrapOn);
+  localStorage.setItem(WRAP_KEY, wrapOn ? "1" : "0");
+  for (const b of document.querySelectorAll(".wrap-toggle")) {
+    b.textContent = wrapOn ? "wrap on" : "wrap off";
+  }
+}
+
+for (const btn of document.querySelectorAll(".wrap-toggle")) {
+  btn.addEventListener("click", () => {
+    wrapOn = !wrapOn;
+    applyWrap();
+  });
+}
+applyWrap();
+
 const COPY_KEY = isMac ? "\u2318" : "Ctrl";
 
 if (footerHint) {
@@ -447,6 +496,42 @@ for (const btn of document.querySelectorAll(".redo-btn, .top-redo")) {
   btn.addEventListener("click", doRedo);
 }
 
+// ---------- case conversion (click: caps -> small -> original) ----------
+
+let caseState = "base";
+let caseBase = null;
+
+function applyCaseLabel() {
+  const label = caseState === "upper" ? "AA" : caseState === "lower" ? "aa" : "Aa";
+  for (const b of document.querySelectorAll(".case-toggle")) {
+    b.textContent = label;
+  }
+}
+
+function cycleCase() {
+  if (!editor.value) return;
+  if (caseState === "base") {
+    caseBase = editor.value;
+    commitHistory(editor.value);
+    if (!applyTextBroadcast(editor.value.toUpperCase(), "uppercase")) return;
+    caseState = "upper";
+  } else if (caseState === "upper") {
+    commitHistory(editor.value);
+    if (!applyTextBroadcast(editor.value.toLowerCase(), "lowercase")) return;
+    caseState = "lower";
+  } else {
+    commitHistory(editor.value);
+    if (!applyTextBroadcast(caseBase || editor.value, "original case")) return;
+    caseState = "base";
+    caseBase = null;
+  }
+  applyCaseLabel();
+}
+
+for (const btn of document.querySelectorAll(".case-toggle")) {
+  btn.addEventListener("click", cycleCase);
+}
+
 // ---------- connected-phones bar (desktop) ----------
 
 const devicesEl = document.getElementById("devices");
@@ -514,6 +599,9 @@ ws.addEventListener("message", (ev) => {
     case "text":
       if (msg.text === lastSent) break;
       commitHistory(editor.value);
+      caseState = "base";
+      caseBase = null;
+      applyCaseLabel();
       // ponytail: keep the caret where it was (reading a scrolled-up spot)
       // unless it sat near the old end — only then jump to the new end.
       const prevLen = editor.value.length;
@@ -610,6 +698,9 @@ editor.addEventListener("input", () => {
   lastSent = editor.value;
   seenRoundTrip.clear();
   commitHistory(prev);
+  caseState = "base";
+  caseBase = null;
+  applyCaseLabel();
   if (ws.readyState !== 1) return;
   // ponytail: throttle typing pings — one per 800ms burst, the debounced text
   // send resolves the indicator anyway.

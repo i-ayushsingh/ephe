@@ -47,6 +47,13 @@
    (e.g. .history-panel and .url-row are display:flex when shown) */
 [hidden] { display: none !important; }
 
+/* bundled pixel font (Press Start 2P, OFL) — served by /font.ttf */
+@font-face {
+  font-family: "Pixel Logo";
+  src: url("/font.ttf") format("truetype");
+  font-display: swap;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -158,6 +165,9 @@ body.role-desktop .top-paste,
 body.role-desktop .top-clear,
 body.role-desktop .top-size,
 body.role-desktop .top-size-reset,
+body.role-desktop .top-font,
+body.role-desktop .top-wrap,
+body.role-desktop .top-case,
 body.role-desktop .top-reset { display: none; }
 
 body.role-desktop.qr-collapsed .qr-panel { display: none; }
@@ -332,6 +342,12 @@ body.role-mobile .editor-panel { border-top: 0; }
 #editor:focus::placeholder { opacity: 0; }
 
 #editor:focus { outline: none; }
+
+/* word wrap off: hard line breaks, horizontal scroll */
+#editor.no-wrap {
+  white-space: pre;
+  overflow-x: auto;
+}
 
 #editor::-webkit-scrollbar { width: 8px; height: 8px; }
 #editor::-webkit-scrollbar-thumb {
