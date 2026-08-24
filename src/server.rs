@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -102,51 +101,16 @@ async fn mobile_url(axum::extract::State(state): axum::extract::State<Arc<AppSta
 }
 
 async fn text_logo() -> Response {
-    let path = find_named("text-logo.png");
-    match path {
-        Some(p) => match std::fs::read(&p) {
-            Ok(bytes) => ([("content-type", "image/png")], bytes).into_response(),
-            Err(_) => StatusCode::NOT_FOUND.into_response(),
-        },
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
+    ([("content-type", "image/png")], &include_bytes!("../text-logo.png")[..]).into_response()
 }
 
 /// The bundled pixel font (Press Start 2P, OFL) for the "pixel" editor font.
 async fn pixel_font() -> Response {
-    let path = find_named("PressStart2P-Regular.ttf");
-    match path {
-        Some(p) => match std::fs::read(&p) {
-            Ok(bytes) => ([("content-type", "font/ttf")], bytes).into_response(),
-            Err(_) => StatusCode::NOT_FOUND.into_response(),
-        },
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
+    ([("content-type", "font/ttf")], &include_bytes!("../PressStart2P-Regular.ttf")[..]).into_response()
 }
 
 async fn logo() -> Response {
-    let path = find_named("Logo.png");
-    match path {
-        Some(p) => match std::fs::read(&p) {
-            Ok(bytes) => ([("content-type", "image/png")], bytes).into_response(),
-            Err(_) => StatusCode::NOT_FOUND.into_response(),
-        },
-        None => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-fn find_named(name: &str) -> Option<PathBuf> {
-    let candidates = [
-        std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())),
-        std::env::current_dir().ok(),
-    ];
-    for base in candidates.into_iter().flatten() {
-        let p = base.join(name);
-        if p.is_file() {
-            return Some(p);
-        }
-    }
-    None
+    ([("content-type", "image/png")], &include_bytes!("../Logo.png")[..]).into_response()
 }
 
 async fn reset(
@@ -294,6 +258,12 @@ async fn handle_socket(
                                 ClientMsg::Text { text } => {
                                     {
                                         let mut s = state.session.lock().await;
+                                        // ponytail: enforce lock server-side — frontend lock is
+                                        // cosmetic, the backend is the authority. Only the desktop
+                                        // can write when the pad is locked.
+                                        if s.locked && role != "desktop" {
+                                            continue;
+                                        }
                                         s.text = text.clone();
                                     }
                                     broadcast(&state, ServerMsg::Text { text }, role, Some(&tx))

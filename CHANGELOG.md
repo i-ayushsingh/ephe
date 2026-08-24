@@ -11,6 +11,31 @@ Categories:
 
 ---
 
+## v0.11.0
+
+### Features added
+
+- **Modal Escape key support** — pressing <kbd>Escape</kbd> now closes any open overlay dialog (keyboard shortcuts reference, text transform sheet, and time-travel history).
+- **Dialog & screen reader accessibility** — added proper `aria-modal="true"` dialog semantics and descriptive alt text for the connection QR code.
+
+### UI/UX changes or overhaul
+
+- **Mobile connection status dot restored** — mobile devices now show a live connection status dot in the header, giving immediate visual feedback whether connected, reconnecting, or disconnected.
+- **Fixed mobile scroll behavior** — eliminated jarring viewport jumps to the bottom of the editor when tapping to edit text on mobile devices.
+
+### Error and bug fixes
+
+- **Server-side pad lock enforcement** — pad lock mode is now strictly verified on the backend; when locked by desktop, text edits from mobile peers are rejected server-side.
+- **Truly self-contained binary** — embedded all visual assets (`Logo.png`, `text-logo.png`, `PressStart2P-Regular.ttf`) directly into `ephe.exe` via compile-time binary embedding, ensuring execution from any folder.
+- **Fixed portable release packaging** — added missing retro font (`PressStart2P-Regular.ttf`) to GitHub release portable archives.
+
+### Other
+
+- Added pull request and push CI verification workflow (`.github/workflows/ci.yml`) with formatting, clippy lints, and test execution.
+- Version 0.11.0.
+
+---
+
 ## v0.10.0 (released)
 
 ### Features added

@@ -656,6 +656,15 @@ if (shortcutsPanel) {
 }
 document.getElementById("shortcuts-close").addEventListener("click", hideShortcuts);
 
+// ponytail: modals must close on Escape for keyboard accessibility
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    hideShortcuts();
+    hideTransform();
+    hideHistory();
+  }
+});
+
 function onMessage(ev) {
   let msg;
   try { msg = JSON.parse(ev.data); } catch { return; }
@@ -786,13 +795,8 @@ editor.addEventListener("input", () => {
   captureHistory();
 });
 
-// ponytail: keep the editor on screen when the mobile keyboard opens.
-if (!isDesktop) {
-  editor.addEventListener("focus", () => {
-    requestAnimationFrame(() => {
-      editor.scrollTop = editor.scrollHeight;
-    });
-  });
-}
+// ponytail: on mobile, let the browser handle focus scrolling natively.
+// Previous code forced scrollTop = scrollHeight which jumped the viewport
+// to the bottom even when the user tapped mid-document.
 
 connect();

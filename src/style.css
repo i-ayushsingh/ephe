@@ -712,7 +712,7 @@ body.role-desktop .status[data-state="error"] ~ main .qr-card {
   }
   .topbar-actions { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .btn-sm { padding: 5px 8px; font-size: 11.5px; }
-  body.role-mobile .status { display: none; } /* room for the extra buttons */
+  body.role-mobile .status .label { display: none; } /* hide text, keep dot */
   .qr-panel { padding: var(--space-md) var(--space-md) var(--space-md); }
   #editor {
     font-size: 16px; /* prevents iOS zoom on focus */

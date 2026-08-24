@@ -34,7 +34,8 @@ jobs:
           & "C:\Program Files (x86)\NSIS\makensis.exe" /INPUTCHARSET UTF8 /V2 installer\ephe.nsi
           Copy-Item Logo.png release\Logo.png -Force
           Copy-Item text-logo.png release\text-logo.png -Force
-          Compress-Archive -Path target\release\ephe.exe, release\Logo.png, release\text-logo.png -DestinationPath release\ephe-portable.zip -Force
+          Copy-Item PressStart2P-Regular.ttf release\PressStart2P-Regular.ttf -Force
+          Compress-Archive -Path target\release\ephe.exe, release\Logo.png, release\text-logo.png, release\PressStart2P-Regular.ttf -DestinationPath release\ephe-portable.zip -Force
           $sums = foreach ($f in @("ephe-setup.exe", "ephe-portable.zip")) {
             (Get-FileHash "release\$f" -Algorithm SHA256).Hash.ToLower() + "  " + $f
           }
