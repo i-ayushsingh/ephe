@@ -1,6 +1,7 @@
-use std::net::Ipv4Addr;
+use std::net::{Ipv4Addr, SocketAddr};
 
 use rand::Rng;
+use tokio::net::TcpListener;
 
 #[derive(Clone, Copy, Debug)]
 pub enum IfKind {
@@ -20,6 +21,37 @@ pub fn pick_port() -> u16 {
     }
     let mut rng = rand::rng();
     rng.random_range(40000..50000)
+}
+
+/// Bind a TCP listener with retry logic across the 40000..50000 port range,
+/// avoiding Hyper-V / WSL dynamic port exclusion blocks on Windows.
+pub async fn bind_listener() -> Result<(TcpListener, u16), std::io::Error> {
+    if let Ok(v) = std::env::var("EPHE_PORT") {
+        if let Ok(p) = v.parse::<u16>() {
+            if p >= 1024 {
+                let addr = SocketAddr::from(([0, 0, 0, 0], p));
+                let l = TcpListener::bind(addr).await?;
+                return Ok((l, p));
+            }
+            eprintln!("ephe: ignoring EPHE_PORT={} (need >= 1024)", p);
+        }
+    }
+    let mut rng = rand::rng();
+    let mut last_err = None;
+    for _ in 0..20 {
+        let p = rng.random_range(40000..50000);
+        let addr = SocketAddr::from(([0, 0, 0, 0], p));
+        match TcpListener::bind(addr).await {
+            Ok(l) => return Ok((l, p)),
+            Err(e) => last_err = Some(e),
+        }
+    }
+    let addr = SocketAddr::from(([0, 0, 0, 0], 0));
+    let l = TcpListener::bind(addr)
+        .await
+        .map_err(|e| last_err.unwrap_or(e))?;
+    let p = l.local_addr()?.port();
+    Ok((l, p))
 }
 
 pub struct Candidate {

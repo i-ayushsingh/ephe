@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 
 use axum::serve;
 use ephe::{manifest, net, server, session};
-use tokio::net::TcpListener;
 
 /// CLI contract for PortPeek. Today only `--new-session`, which is exactly
 /// what a plain `ephe.exe` launch already does: create a new normal session,
@@ -29,21 +28,18 @@ async fn main() {
     let session = session::new_session();
     let session_id = { session.lock().await.id.clone() };
 
-    let port = net::pick_port();
+    let (listener, port) = match net::bind_listener().await {
+        Ok(res) => res,
+        Err(e) => {
+            eprintln!("ephe: failed to bind TCP listener: {}", e);
+            std::process::exit(1);
+        }
+    };
     let (lan_ip, candidates) = net::pick_lan_ip();
 
     let token = { session.lock().await.token.clone() };
     let desktop_url = format!("http://localhost:{}/?role=desktop&token={}", port, token);
     let mobile_url = format!("http://{}:{}/?token={}", lan_ip, port, token);
-
-    let local_addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let listener = match TcpListener::bind(local_addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("ephe: failed to bind port {}: {}", port, e);
-            std::process::exit(1);
-        }
-    };
 
     // PortPeek discovery: clear crash leftovers, then announce this session.
     manifest::sweep_stale();
