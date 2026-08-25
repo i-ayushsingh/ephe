@@ -11,6 +11,28 @@ Categories:
 
 ---
 
+## v0.13.0
+
+### Features added
+
+- **Installable PWA & Web App Manifest** — served `/manifest.json` and `/manifest.webmanifest` allowing Android/mobile users to "Add to Home Screen" for a full-screen, standalone application experience.
+- **In-app QR camera scanner** — built-in scanner modal using HTML5 camera video and the `BarcodeDetector` API. Tapping `[scan qr]` on mobile / PWA scans desktop QR codes directly without opening external camera or browser apps.
+- **Live session reset handoff** — when a new session is started from the desktop, connected mobile devices and PWAs receive the new session URL automatically and rotate without needing to re-scan.
+- **Download as file** — added a dedicated download icon button in the topbar header for one-click `.txt` file export generated client-side via Blob (zero server storage, 100% ephemeral).
+- **Drag & drop text import** — drag and drop any text/code file onto the editor to load its contents with drag-over visual indicator.
+- **Line numbers toggle** — toggleable gutter beside the editor with synced line numbers and scrolling for code snippets and stack traces.
+
+### UI/UX changes or overhaul
+
+- **Seamless session ended state** — mobile devices automatically surface the `[scan qr]` action button when disconnected or when a session ends.
+- **Synced gutter scaling** — line number gutter automatically synchronizes font family and font size changes with editor preferences.
+
+### Other
+
+- Version 0.13.0.
+
+---
+
 ## v0.12.0
 
 ### Features added

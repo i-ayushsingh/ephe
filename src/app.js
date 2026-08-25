@@ -57,12 +57,14 @@ function toast(text, type = "success") {
 // ---------- char/word counter ----------
 
 function updateCounter() {
-  if (!footerCount) return;
-  const t = editor.value;
-  const words = t.trim() ? t.trim().split(/\s+/).length : 0;
-  const lines = t ? t.split("\n").length : 0;
-  footerCount.textContent =
-    `${t.length.toLocaleString()} chars · ${words} words · ${lines} lines`;
+  if (footerCount) {
+    const t = editor.value;
+    const words = t.trim() ? t.trim().split(/\s+/).length : 0;
+    const lines = t ? t.split("\n").length : 0;
+    footerCount.textContent =
+      `${t.length.toLocaleString()} chars · ${words} words · ${lines} lines`;
+  }
+  updateLineNumbers();
 }
 
 // ---------- collapse the QR panel (desktop) ----------
@@ -260,6 +262,110 @@ function clearText() {
 const clearBtn = document.getElementById("clear-btn");
 if (clearBtn) clearBtn.addEventListener("click", clearText);
 
+// ---------- download as file ----------
+
+function downloadText() {
+  if (!editor.value) {
+    toast("nothing to download", "info");
+    return;
+  }
+  const blob = new Blob([editor.value], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `ephe-${dateStr}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast("downloaded!");
+}
+
+const downloadBtn = document.getElementById("download-btn");
+if (downloadBtn) downloadBtn.addEventListener("click", downloadText);
+
+// ---------- line numbers toggle ----------
+
+const LINES_KEY = "ephe-line-numbers";
+const gutter = document.getElementById("gutter");
+const linesBtn = document.getElementById("lines-btn");
+let showLines = localStorage.getItem(LINES_KEY) === "1";
+
+function updateLineNumbers() {
+  if (!showLines || !gutter) return;
+  const lineCount = (editor.value.match(/\n/g) || []).length + 1;
+  let s = "";
+  for (let i = 1; i <= lineCount; i++) {
+    s += i + (i === lineCount ? "" : "\n");
+  }
+  gutter.textContent = s;
+}
+
+function applyLineNumbers() {
+  if (!gutter || !linesBtn) return;
+  gutter.hidden = !showLines;
+  linesBtn.textContent = showLines ? "lines on" : "lines off";
+  localStorage.setItem(LINES_KEY, showLines ? "1" : "0");
+  if (showLines) {
+    updateLineNumbers();
+    gutter.scrollTop = editor.scrollTop;
+  }
+}
+
+if (linesBtn) {
+  linesBtn.addEventListener("click", () => {
+    showLines = !showLines;
+    applyLineNumbers();
+    toast(showLines ? "line numbers enabled" : "line numbers disabled", "info");
+  });
+}
+applyLineNumbers();
+
+editor.addEventListener("scroll", () => {
+  if (showLines && gutter) {
+    gutter.scrollTop = editor.scrollTop;
+  }
+});
+
+// ---------- drag and drop text import ----------
+
+editor.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  if (editor.readOnly) return;
+  editor.classList.add("drag-over");
+});
+
+editor.addEventListener("dragleave", (e) => {
+  e.preventDefault();
+  editor.classList.remove("drag-over");
+});
+
+editor.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  editor.classList.remove("drag-over");
+  if (editor.readOnly) return;
+  const files = e.dataTransfer ? e.dataTransfer.files : null;
+  if (!files || files.length === 0) return;
+  const file = files[0];
+  if (file.size > 1_048_576) {
+    toast("file too large (max 1MB)", "error");
+    return;
+  }
+  try {
+    const text = await file.text();
+    if (text !== undefined) {
+      commitHistory(editor.value);
+      applyTextBroadcast(text, "file imported!");
+      updateUndoRedo();
+      updateLineNumbers();
+    }
+  } catch {
+    toast("could not read file", "error");
+  }
+});
+
 // ---------- mobile link fallback (QR alternative) ----------
 
 const urlRow = document.getElementById("url-row");
@@ -300,6 +406,7 @@ let textSize = parseInt(localStorage.getItem(SIZE_KEY), 10) || 16;
 function applyTextSize() {
   textSize = Math.min(MAX_SIZE, Math.max(MIN_SIZE, textSize));
   editor.style.fontSize = textSize + "px";
+  if (gutter) gutter.style.fontSize = textSize + "px";
   localStorage.setItem(SIZE_KEY, String(textSize));
   for (const b of document.querySelectorAll(".size-reset")) {
     b.hidden = textSize === 16;
@@ -341,6 +448,7 @@ let fontIdx = Math.max(0, FONTS.findIndex((f) => f.key === localStorage.getItem(
 
 function applyFont() {
   editor.style.fontFamily = FONTS[fontIdx].family;
+  if (gutter) gutter.style.fontFamily = FONTS[fontIdx].family;
   localStorage.setItem(FONT_KEY, FONTS[fontIdx].key);
   for (const b of document.querySelectorAll(".font-toggle")) {
     b.textContent = "font: " + FONTS[fontIdx].key;
@@ -399,6 +507,7 @@ function setStatus(state, label) {
   statusEl.dataset.state = state;
   statusLabel.textContent = label;
   if (captionEl) captionEl.textContent = captions[state] || "";
+  document.body.classList.toggle("session-ended", state === "error" || state === "lost");
 }
 
 function showReset() {
@@ -758,6 +867,94 @@ if (shortcutsPanel) {
 }
 document.getElementById("shortcuts-close").addEventListener("click", hideShortcuts);
 
+// ---------- in-app qr camera scanner (mobile / PWA) ----------
+
+let scanStream = null;
+let scanTimer = null;
+const scanPanel = document.getElementById("scan-panel");
+const scanVideo = document.getElementById("scan-video");
+const scanClose = document.getElementById("scan-close");
+const scanBtn = document.getElementById("scan-btn");
+
+async function startScan() {
+  openModal(scanPanel, "#scan-close");
+  const scanHint = document.getElementById("scan-hint");
+  if (scanHint) scanHint.textContent = "point camera at the desktop QR code";
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      toast("camera not supported", "error");
+      return;
+    }
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+    });
+    if (scanVideo) {
+      scanVideo.srcObject = scanStream;
+      scanVideo.play();
+    }
+    if ("BarcodeDetector" in window) {
+      const detector = new BarcodeDetector({ formats: ["qr_code"] });
+      scanTimer = setInterval(async () => {
+        if (!scanVideo || scanVideo.readyState < 2) return;
+        try {
+          const codes = await detector.detect(scanVideo);
+          if (codes && codes.length > 0) {
+            handleScannedUrl(codes[0].rawValue);
+          }
+        } catch {}
+      }, 250);
+    } else {
+      if (scanHint) scanHint.textContent = "scanning...";
+    }
+  } catch (err) {
+    toast("camera permission denied", "error");
+    hideScan();
+  }
+}
+
+function handleScannedUrl(raw) {
+  stopScan();
+  hideScan();
+  try {
+    const url = new URL(raw, location.href);
+    const scannedToken = url.searchParams.get("token");
+    if (scannedToken) {
+      toast("connecting...", "info");
+      location.href = url.href;
+      return;
+    }
+  } catch {}
+  toast("invalid ephe QR code", "error");
+}
+
+function stopScan() {
+  if (scanTimer) {
+    clearInterval(scanTimer);
+    scanTimer = null;
+  }
+  if (scanStream) {
+    scanStream.getTracks().forEach((track) => track.stop());
+    scanStream = null;
+  }
+  if (scanVideo) {
+    scanVideo.srcObject = null;
+  }
+}
+
+function hideScan() {
+  stopScan();
+  closeModal(scanPanel);
+}
+
+if (scanBtn) scanBtn.addEventListener("click", startScan);
+if (scanClose) scanClose.addEventListener("click", hideScan);
+if (scanPanel) {
+  scanPanel.addEventListener("click", (e) => {
+    if (e.target === scanPanel) hideScan();
+  });
+  scanPanel.addEventListener("keydown", (e) => trapFocus(e, scanPanel));
+}
+
 // ponytail: modals must close on Escape for keyboard accessibility
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
@@ -765,6 +962,7 @@ document.addEventListener("keydown", (e) => {
     hideTransform();
     hideHistory();
     hidePaste();
+    hideScan();
   }
 });
 

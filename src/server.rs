@@ -54,6 +54,8 @@ pub fn build_router(session: SharedSession, port: u16, lan_ip: String) -> Router
         .route("/font.ttf", get(pixel_font))
         .route("/qr", get(qr))
         .route("/url", get(mobile_url))
+        .route("/manifest.json", get(manifest_json))
+        .route("/manifest.webmanifest", get(manifest_json))
         .route("/reset", post(reset))
         .route("/ws", get(ws))
         .with_state(state)
@@ -61,6 +63,29 @@ pub fn build_router(session: SharedSession, port: u16, lan_ip: String) -> Router
 
 async fn index() -> Html<&'static str> {
     Html(include_str!("index.html"))
+}
+
+async fn manifest_json() -> Response {
+    (
+        [("content-type", "application/manifest+json; charset=utf-8")],
+        r##"{
+  "name": "ephe",
+  "short_name": "ephe",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}"##,
+    )
+        .into_response()
 }
 
 async fn css() -> Response {
@@ -159,15 +184,17 @@ async fn reset(
         state.lan_ip, state.port, new_token
     );
 
-    // ponytail: tell the desktop to navigate, the mobiles to leave, then
-    // rotate the token and wipe the slate.
+    // ponytail: tell the desktop and mobiles to navigate to the new session,
+    // then rotate the token and wipe the slate.
     if let Some(c) = s.desktop.as_ref() {
         let _ = c.tx.send(ServerMsg::Reset {
             url: new_desktop_url.clone(),
         });
     }
     for m in s.mobiles.iter() {
-        let _ = m.tx.send(ServerMsg::PeerLeft);
+        let _ = m.tx.send(ServerMsg::Reset {
+            url: new_mobile_url.clone(),
+        });
     }
     s.desktop = None;
     s.mobiles.clear();
