@@ -7,8 +7,8 @@ use std::future::IntoFuture;
 use std::io::{Read, Write};
 use std::time::Duration;
 
-use ephe::session::new_session;
 use ephe::server::build_router;
+use ephe::session::new_session;
 use tokio::net::TcpListener;
 
 fn raw_http(host: &str, port: u16, request: &str) -> (u16, String) {
@@ -43,7 +43,7 @@ async fn loopback_reset_without_token_is_allowed() {
     let (status, _) = raw_http(
         "127.0.0.1",
         port,
-        &format!("POST /reset?token= HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"),
+        "POST /reset?token= HTTP/1.1\r\nHost: localhost\r\nX-Ephe-Client: true\r\nConnection: close\r\n\r\n",
     );
     assert_eq!(status, 200, "tokenless host UI can reset");
 }
@@ -54,9 +54,25 @@ async fn loopback_reset_with_garbage_token_is_allowed() {
     let (status, _) = raw_http(
         "127.0.0.1",
         port,
-        &format!("POST /reset?token=garbage HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"),
+        "POST /reset?token=garbage HTTP/1.1\r\nHost: localhost\r\nX-Ephe-Client: true\r\nConnection: close\r\n\r\n",
     );
     assert_eq!(status, 200, "loopback trust, token irrelevant");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reset_without_x_ephe_header_is_forbidden() {
+    let (port, token, _) = spawn_server().await;
+    let (status, _) = raw_http(
+        "127.0.0.1",
+        port,
+        &format!(
+            "POST /reset?token={token} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        ),
+    );
+    assert_eq!(
+        status, 403,
+        "cross-origin without X-Ephe-Client is forbidden"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -68,7 +84,7 @@ async fn lan_reset_without_token_is_forbidden() {
     let (status, _) = raw_http(
         &lan_ip,
         port,
-        &format!("POST /reset?token= HTTP/1.1\r\nHost: {lan_ip}\r\nConnection: close\r\n\r\n"),
+        &format!("POST /reset?token= HTTP/1.1\r\nHost: {lan_ip}\r\nX-Ephe-Client: true\r\nConnection: close\r\n\r\n"),
     );
     assert_eq!(status, 403, "LAN cannot use the host-only reset privilege");
 }
@@ -82,9 +98,14 @@ async fn lan_reset_with_valid_token_is_allowed() {
     let (status, _) = raw_http(
         &lan_ip,
         port,
-        &format!("POST /reset?token={token} HTTP/1.1\r\nHost: {lan_ip}\r\nConnection: close\r\n\r\n"),
+        &format!(
+            "POST /reset?token={token} HTTP/1.1\r\nHost: {lan_ip}\r\nX-Ephe-Client: true\r\nConnection: close\r\n\r\n"
+        ),
     );
-    assert_eq!(status, 200, "authenticated LAN secondary device still resets");
+    assert_eq!(
+        status, 200,
+        "authenticated LAN secondary device still resets"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -93,7 +114,7 @@ async fn host_url_serves_host_ui_markup() {
     let (status, body) = raw_http(
         "127.0.0.1",
         port,
-        &format!("GET /?role=desktop HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"),
+        "GET /?role=desktop HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
     );
     assert_eq!(status, 200);
     // the host UI markup (QR panel + host-only controls) is what the

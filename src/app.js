@@ -38,17 +38,20 @@ function hideHint() {
 
 const toastsEl = document.getElementById("toasts");
 
-function toast(text) {
+function toast(text, type = "success") {
+  if (!toastsEl) return;
   const el = document.createElement("div");
   el.className = "toast";
+  if (type !== "success") el.dataset.type = type;
   el.textContent = text;
   toastsEl.appendChild(el);
   requestAnimationFrame(() => el.classList.add("in"));
+  const duration = type === "error" ? 3500 : (type === "info" ? 2500 : 1500);
   setTimeout(() => {
     el.classList.remove("in");
     el.classList.add("out");
     setTimeout(() => el.remove(), 200);
-  }, 1500);
+  }, duration);
 }
 
 // ---------- char/word counter ----------
@@ -108,6 +111,43 @@ if (themeBtn) {
   }
 }
 
+// ---------- modal focus & accessibility helpers ----------
+
+let lastFocusedElement = null;
+
+function openModal(panelEl, focusTargetSelector) {
+  if (!panelEl) return;
+  lastFocusedElement = document.activeElement;
+  panelEl.hidden = false;
+  const target = focusTargetSelector
+    ? panelEl.querySelector(focusTargetSelector)
+    : panelEl.querySelector("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])");
+  if (target) setTimeout(() => target.focus(), 50);
+}
+
+function closeModal(panelEl) {
+  if (!panelEl || panelEl.hidden) return;
+  panelEl.hidden = true;
+  if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
+    lastFocusedElement.focus();
+  }
+}
+
+function trapFocus(e, panelEl) {
+  if (e.key !== "Tab" || !panelEl || panelEl.hidden) return;
+  const focusables = panelEl.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])");
+  if (!focusables.length) return;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault();
+    last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault();
+    first.focus();
+  }
+}
+
 // ---------- copy / paste ----------
 
 async function copyValue(text, okLabel) {
@@ -142,25 +182,70 @@ async function copyText() {
   await copyValue(editor.value, "copied!");
 }
 
-async function pasteText() {
-  if (editor.readOnly) return;
-  let text = null;
-  try {
-    text = await navigator.clipboard.readText();
-  } catch {
-    text = window.prompt("paste text below:");
-  }
-  if (!text) return;
-  insertAtCursor(text);
-  toast("pasted!");
+// ---------- in-app paste fallback (when clipboard permissions are unavailable) ----------
+
+const pastePanel = document.getElementById("paste-panel");
+const pasteInput = document.getElementById("paste-input");
+const pasteSubmit = document.getElementById("paste-submit");
+const pasteClose = document.getElementById("paste-close");
+
+function showPasteModal() {
+  if (pasteInput) pasteInput.value = "";
+  openModal(pastePanel, "#paste-input");
 }
 
-for (const btn of document.querySelectorAll(".top-copy, #copy-btn")) {
-  btn.addEventListener("click", copyText);
+function hidePaste() {
+  closeModal(pastePanel);
 }
-for (const btn of document.querySelectorAll(".top-paste, #paste-btn")) {
-  btn.addEventListener("click", pasteText);
+
+if (pasteSubmit) {
+  pasteSubmit.addEventListener("click", () => {
+    const val = pasteInput ? pasteInput.value : "";
+    if (val) {
+      insertAtCursor(val);
+      toast("pasted!");
+    }
+    hidePaste();
+  });
 }
+if (pasteClose) {
+  pasteClose.addEventListener("click", hidePaste);
+}
+if (pastePanel) {
+  pastePanel.addEventListener("click", (e) => {
+    if (e.target === pastePanel) hidePaste();
+  });
+  pastePanel.addEventListener("keydown", (e) => trapFocus(e, pastePanel));
+}
+if (pasteInput) {
+  pasteInput.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      pasteSubmit.click();
+    }
+  });
+}
+
+async function pasteText() {
+  if (editor.readOnly) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        insertAtCursor(text);
+        toast("pasted!");
+        return;
+      }
+    }
+  } catch {}
+  showPasteModal();
+}
+
+const copyBtn = document.getElementById("copy-btn");
+if (copyBtn) copyBtn.addEventListener("click", copyText);
+
+const pasteBtn = document.getElementById("paste-btn");
+if (pasteBtn) pasteBtn.addEventListener("click", pasteText);
 
 // ---------- clear ----------
 
@@ -172,9 +257,8 @@ function clearText() {
   toast("cleared!");
 }
 
-for (const btn of document.querySelectorAll(".top-clear, #clear-btn")) {
-  btn.addEventListener("click", clearText);
-}
+const clearBtn = document.getElementById("clear-btn");
+if (clearBtn) clearBtn.addEventListener("click", clearText);
 
 // ---------- mobile link fallback (QR alternative) ----------
 
@@ -229,12 +313,12 @@ for (const btn of document.querySelectorAll(".size-reset")) {
   });
 }
 
-for (const btn of document.querySelectorAll(".top-size, #size-up-btn, #size-down-btn")) {
+for (const btn of document.querySelectorAll("#size-up-btn, #size-down-btn")) {
   btn.addEventListener("click", () => {
     const up = btn.id.includes("up");
     const next = textSize + (up ? 2 : -2);
     if (next > MAX_SIZE || next < MIN_SIZE) {
-      toast(up ? "maximum size reached" : "minimum size reached");
+      toast(up ? "maximum size reached" : "minimum size reached", "info");
       return;
     }
     textSize = next;
@@ -330,7 +414,10 @@ for (const resetBtn of document.querySelectorAll(".reset-btn")) {
     const original = resetBtn.textContent;
     resetBtn.textContent = "starting\u2026";
     try {
-      const res = await fetch("/reset?token=" + encodeURIComponent(token), { method: "POST" });
+      const res = await fetch("/reset?token=" + encodeURIComponent(token), {
+        method: "POST",
+        headers: { "X-Ephe-Client": "true" },
+      });
       if (!res.ok) throw new Error("reset failed");
       const data = await res.json();
       location.href = data.url;
@@ -356,7 +443,7 @@ function connect() {
     setStatus("idle", "waiting");
     if (everJoined) {
       everJoined = false;
-      toast("reconnected — fresh pad");
+      toast("reconnected — fresh pad", "info");
     }
   });
   sock.addEventListener("message", onMessage);
@@ -475,7 +562,7 @@ function hideHistory() {
 
 function applyTextBroadcast(text, okLabel) {
   if (ws.readyState !== 1) {
-    toast("session ended");
+    toast("session ended", "error");
     return false;
   }
   applying = true;
@@ -574,24 +661,36 @@ function renderDevices(list) {
   }
 }
 
-const historyBtn = document.getElementById("top-history");
+const historyBtn = document.getElementById("history-btn");
+function showHistory() {
+  renderHistory();
+  openModal(historyPanel, ".history-item, #history-close");
+}
+function hideHistory() {
+  closeModal(historyPanel);
+}
 if (historyBtn) {
-  historyBtn.addEventListener("click", () => {
-    renderHistory();
-    historyPanel.hidden = false;
-  });
+  historyBtn.addEventListener("click", showHistory);
 }
 document.getElementById("history-close").addEventListener("click", hideHistory);
 if (historyPanel) {
   historyPanel.addEventListener("click", (e) => {
     if (e.target === historyPanel) hideHistory();
   });
+  historyPanel.addEventListener("keydown", (e) => trapFocus(e, historyPanel));
 }
 
 // ---------- transform menu (mobile: bottom-centre ⋮ button) ----------
 
 const transformPanel = document.getElementById("transform-panel");
 const transformList = document.getElementById("transform-list");
+
+function showTransform() {
+  openModal(transformPanel, ".transform-item");
+}
+function hideTransform() {
+  closeModal(transformPanel);
+}
 
 const TRANSFORMS = [
   { label: "UPPERCASE", apply: (t) => t.toUpperCase() },
@@ -609,50 +708,53 @@ if (transformList) {
     b.className = "btn btn-sm transform-item";
     b.textContent = tr.label;
     b.addEventListener("click", () => {
-      if (!editor.value) { toast("nothing to transform"); return; }
+      if (!editor.value) { toast("nothing to transform", "info"); return; }
       const out = tr.apply(editor.value);
-      if (out === editor.value) { toast("nothing to change"); return; }
+      if (out === editor.value) { toast("nothing to change", "info"); return; }
       commitHistory(editor.value);
-      if (applyTextBroadcast(out, "transformed")) transformPanel.hidden = true;
+      if (applyTextBroadcast(out, "transformed")) hideTransform();
       updateUndoRedo();
     });
     transformList.appendChild(b);
   }
 }
 
-function hideTransform() {
-  if (transformPanel) transformPanel.hidden = true;
-}
-
 const transformBtn = document.getElementById("transform-btn");
 if (transformBtn) {
   transformBtn.addEventListener("click", () => {
-    transformPanel.hidden = !transformPanel.hidden;
+    if (transformPanel.hidden) showTransform();
+    else hideTransform();
   });
 }
 if (transformPanel) {
   transformPanel.addEventListener("click", (e) => {
     if (e.target === transformPanel) hideTransform();
   });
+  transformPanel.addEventListener("keydown", (e) => trapFocus(e, transformPanel));
 }
 document.getElementById("transform-close").addEventListener("click", hideTransform);
 
 // ---------- keyboard shortcuts reference (desktop only, native in browser) ----------
 
 const shortcutsPanel = document.getElementById("shortcuts-panel");
+function showShortcuts() {
+  openModal(shortcutsPanel, "#shortcuts-close");
+}
 function hideShortcuts() {
-  if (shortcutsPanel) shortcutsPanel.hidden = true;
+  closeModal(shortcutsPanel);
 }
 const shortcutsBtn = document.getElementById("shortcuts-btn");
 if (shortcutsBtn) {
   shortcutsBtn.addEventListener("click", () => {
-    shortcutsPanel.hidden = !shortcutsPanel.hidden;
+    if (shortcutsPanel.hidden) showShortcuts();
+    else hideShortcuts();
   });
 }
 if (shortcutsPanel) {
   shortcutsPanel.addEventListener("click", (e) => {
     if (e.target === shortcutsPanel) hideShortcuts();
   });
+  shortcutsPanel.addEventListener("keydown", (e) => trapFocus(e, shortcutsPanel));
 }
 document.getElementById("shortcuts-close").addEventListener("click", hideShortcuts);
 
@@ -662,6 +764,7 @@ document.addEventListener("keydown", (e) => {
     hideShortcuts();
     hideTransform();
     hideHistory();
+    hidePaste();
   }
 });
 
@@ -725,7 +828,7 @@ function onMessage(ev) {
         // the desktop's own join also arrives here; the authoritative phone
         // count comes with the devices list right after
         if (!joinedSelf) joinedSelf = true;
-        else toast("phone connected");
+        else toast("phone connected", "info");
       } else {
         peerCount++;
         setStatus("connected", phoneLabel(peerCount));
@@ -760,7 +863,7 @@ function onMessage(ev) {
     case "error":
       setStatus("error", msg.reason || "rejected");
       // phones hide the status label, so the reason goes in a toast
-      toast(msg.reason || "session ended");
+      toast(msg.reason || "session ended", "error");
       if (isDesktop && captionEl) captionEl.textContent = msg.reason || "session ended";
       if (!isDesktop) showHint(msg.reason || "session ended", true);
       editor.readOnly = true;

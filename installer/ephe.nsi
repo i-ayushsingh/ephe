@@ -36,7 +36,7 @@ Section "Install" SecInstall
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "UninstallString" "$\"$INSTDIR\uninst.exe$\""
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "Publisher" "ephe"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "DisplayVersion" "0.11.0"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "DisplayVersion" "0.12.0"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ephe" "NoRepair" 1
 SectionEnd

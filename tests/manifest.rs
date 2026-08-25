@@ -8,11 +8,7 @@ static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Each test gets its own LOCALAPPDATA so tests never collide (env is global).
 fn temp_appdata(tag: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!(
-        "ephe-manifest-test-{}-{}",
-        tag,
-        std::process::id()
-    ));
+    let d = std::env::temp_dir().join(format!("ephe-manifest-test-{}-{}", tag, std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(d.join("Ephe").join("PortPeek")).unwrap();
     std::env::set_var("LOCALAPPDATA", &d);
@@ -20,7 +16,10 @@ fn temp_appdata(tag: &str) -> std::path::PathBuf {
 }
 
 fn read_manifest(dir: &std::path::Path, session_id: &str) -> serde_json::Value {
-    let p = dir.join("Ephe").join("PortPeek").join(format!("{session_id}.json"));
+    let p = dir
+        .join("Ephe")
+        .join("PortPeek")
+        .join(format!("{session_id}.json"));
     let mut f = std::fs::File::open(&p).expect("manifest file exists");
     let mut s = String::new();
     f.read_to_string(&mut s).unwrap();

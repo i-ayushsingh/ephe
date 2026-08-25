@@ -5,8 +5,8 @@
 use std::future::IntoFuture;
 use std::time::Duration;
 
-use ephe::session::new_session;
 use ephe::server::build_router;
+use ephe::session::new_session;
 use futures::StreamExt;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;

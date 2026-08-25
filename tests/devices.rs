@@ -5,16 +5,20 @@
 
 use std::future::IntoFuture;
 
-use ephe::session::new_session;
 use ephe::server::build_router;
+use ephe::session::new_session;
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
-type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn connect(url: &str) -> Ws {
-    tokio_tungstenite::connect_async(url).await.expect("connect").0
+    tokio_tungstenite::connect_async(url)
+        .await
+        .expect("connect")
+        .0
 }
 
 async fn recv_json(ws: &mut Ws) -> serde_json::Value {
@@ -95,7 +99,7 @@ async fn devices_seen_and_kick_flow() {
 
     // desktop kicks phone 1 -> it gets "kicked", everyone else gets peer_left
     desktop
-        .send(Message::Text(format!(r#"{{"type":"kick","id":"{id1}"}}"#).into()))
+        .send(Message::Text(format!(r#"{{"type":"kick","id":"{id1}"}}"#)))
         .await
         .unwrap();
     let m = recv_json(&mut phone1).await;

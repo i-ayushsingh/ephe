@@ -15,17 +15,8 @@
     <div class="devices" id="devices" aria-label="connected phones"></div>
     <div class="topbar-actions">
       <button class="btn btn-sm" id="collapse-btn" type="button">hide qr</button>
-      <button class="btn btn-sm top-copy" id="top-copy" type="button">copy</button>
-      <button class="btn btn-sm top-paste" id="top-paste" type="button">paste</button>
-      <button class="btn btn-sm top-clear" id="top-clear" type="button">clear</button>
-      <button class="btn btn-sm lock-btn" id="top-lock" type="button">lock pad</button>
-      <button class="btn btn-sm top-size" id="top-size-down" type="button" aria-label="decrease text size">A&minus;</button>
-      <button class="btn btn-sm top-size" id="top-size-up" type="button" aria-label="increase text size">A+</button>
-      <button class="btn btn-sm top-size-reset size-reset" id="top-size-reset" type="button" hidden>size reset</button>
-      <button class="btn btn-sm top-font font-toggle" id="top-font" type="button">font: system</button>
-      <button class="btn btn-sm top-wrap wrap-toggle" id="top-wrap" type="button">wrap on</button>
-      <button class="btn btn-sm top-history" id="top-history" type="button">history</button>
-      <button class="btn btn-sm reset-btn top-reset" id="top-reset" type="button" hidden>start new session</button>
+      <button class="btn btn-sm lock-btn" id="lock-btn" type="button">lock pad</button>
+      <button class="btn btn-sm" id="history-btn" type="button">history</button>
       <button class="btn btn-sm btn-icon" id="theme-btn" type="button" aria-label="switch theme">&#9788;</button>
       <span class="status" id="status" aria-live="polite">
         <span class="dot" aria-hidden="true"></span>
@@ -62,10 +53,10 @@
         <p class="footer-hint" id="footer-hint">start typing — text syncs instantly</p>
         <div class="footer-actions">
           <button class="btn btn-sm undo-btn" id="undo-btn" type="button" disabled aria-label="undo">&#8630; <span class="btn-txt">undo</span></button>
-          <button class="btn btn-sm transform-btn" id="transform-btn" type="button" aria-label="transform menu">transform</button>
-          <button class="btn btn-sm redo-btn" id="redo-btn" type="button" disabled aria-label="redo">&#8631; <span class="btn-txt">redo</span></button>
           <button class="btn btn-sm" id="copy-btn" type="button">copy</button>
+          <button class="btn btn-sm transform-btn" id="transform-btn" type="button" aria-label="transform menu">transform</button>
           <button class="btn btn-sm" id="paste-btn" type="button">paste</button>
+          <button class="btn btn-sm redo-btn" id="redo-btn" type="button" disabled aria-label="redo">&#8631; <span class="btn-txt">redo</span></button>
           <button class="btn btn-sm" id="clear-btn" type="button">clear</button>
           <button class="btn btn-sm" id="size-down-btn" type="button" aria-label="decrease text size">A&minus;</button>
           <button class="btn btn-sm" id="size-up-btn" type="button" aria-label="increase text size">A+</button>
@@ -81,34 +72,44 @@
   </main>
 
   <div class="transform-panel" id="shortcuts-panel" hidden>
-    <div class="transform-card" role="dialog" aria-modal="true" aria-label="keyboard shortcuts">
-      <h2 class="transform-title">shortcuts</h2>
+    <div class="transform-card" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
+      <h2 class="transform-title" id="shortcuts-title">shortcuts</h2>
       <ul class="shortcuts-list">
         <li><kbd>Ctrl</kbd>+<kbd>A</kbd> select all</li>
         <li><kbd>Ctrl</kbd>+<kbd>C</kbd> copy</li>
         <li><kbd>Ctrl</kbd>+<kbd>V</kbd> paste</li>
         <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</li>
         <li><kbd>Ctrl</kbd>+<kbd>Y</kbd> redo</li>
-        <li><kbd>Ctrl</kbd>+<kbd>F</kbd> find</li>
       </ul>
       <button class="btn btn-sm" id="shortcuts-close" type="button">close</button>
     </div>
   </div>
 
   <div class="transform-panel" id="transform-panel" hidden>
-    <div class="transform-card" role="dialog" aria-modal="true" aria-label="transform">
-      <h2 class="transform-title">transform</h2>
+    <div class="transform-card" role="dialog" aria-modal="true" aria-labelledby="transform-title">
+      <h2 class="transform-title" id="transform-title">transform</h2>
       <div class="transform-list" id="transform-list"></div>
       <button class="btn btn-sm" id="transform-close" type="button">close</button>
     </div>
   </div>
 
   <div class="history-panel" id="history-panel" hidden>
-    <div class="history-card" role="dialog" aria-modal="true" aria-label="history">
-      <h2 class="history-title">history</h2>
+    <div class="history-card" role="dialog" aria-modal="true" aria-labelledby="history-title">
+      <h2 class="history-title" id="history-title">history</h2>
       <p class="history-empty" id="history-empty">nothing to show yet — start typing</p>
       <ul class="history-list" id="history-list"></ul>
       <button class="btn btn-sm" id="history-close" type="button">close</button>
+    </div>
+  </div>
+
+  <div class="transform-panel" id="paste-panel" hidden>
+    <div class="transform-card" role="dialog" aria-modal="true" aria-labelledby="paste-title">
+      <h2 class="transform-title" id="paste-title">paste text</h2>
+      <textarea id="paste-input" class="paste-input" rows="4" placeholder="paste text here..." aria-label="paste text input"></textarea>
+      <div class="modal-actions">
+        <button class="btn btn-sm" id="paste-submit" type="button">insert</button>
+        <button class="btn btn-sm" id="paste-close" type="button">cancel</button>
+      </div>
     </div>
   </div>
 

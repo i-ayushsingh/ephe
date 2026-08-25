@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 ///
 /// Windows-only by nature: without LOCALAPPDATA (Linux/macOS) every function
 /// here no-ops, so the integration stays strictly optional.
-
 const SCHEMA_VERSION: u32 = 1;
 const SESSION_NAME: &str = "Ephe Session";
 
@@ -44,7 +43,9 @@ fn path_for(session_id: &str) -> Option<PathBuf> {
 /// Create or update the manifest for a running session. No token, no text,
 /// no secrets — only what PortPeek needs to discover and open the session.
 pub fn publish(session_id: &str, port: u16, connected_devices: usize) {
-    let Some(path) = path_for(session_id) else { return };
+    let Some(path) = path_for(session_id) else {
+        return;
+    };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -86,17 +87,24 @@ pub fn remove(session_id: &str) {
 // milliseconds and harmless.
 pub fn sweep_stale() {
     let Some(d) = dir() else { return };
-    let Ok(entries) = std::fs::read_dir(&d) else { return };
+    let Ok(entries) = std::fs::read_dir(&d) else {
+        return;
+    };
     for e in entries.flatten() {
         let path = e.path();
         if path.extension().and_then(|x| x.to_str()) != Some("json") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else { continue };
-        let Ok(m) = serde_json::from_str::<Manifest>(&text) else { continue };
-        let Ok(addr) = format!("127.0.0.1:{}", m.port).parse::<SocketAddr>() else { continue };
-        let alive =
-            std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok();
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(m) = serde_json::from_str::<Manifest>(&text) else {
+            continue;
+        };
+        let Ok(addr) = format!("127.0.0.1:{}", m.port).parse::<SocketAddr>() else {
+            continue;
+        };
+        let alive = std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok();
         if !alive {
             let _ = std::fs::remove_file(&path);
         }

@@ -5,16 +5,20 @@
 use std::future::IntoFuture;
 use std::time::Duration;
 
-use ephe::session::new_session;
 use ephe::server::build_router;
+use ephe::session::new_session;
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
-type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn connect(url: &str) -> Ws {
-    tokio_tungstenite::connect_async(url).await.expect("connect").0
+    tokio_tungstenite::connect_async(url)
+        .await
+        .expect("connect")
+        .0
 }
 
 async fn recv_json(ws: &mut Ws) -> serde_json::Value {
@@ -69,7 +73,10 @@ async fn desktop_lock_is_relayed_and_phone_lock_is_ignored() {
         .await
         .unwrap();
     let nothing = tokio::time::timeout(Duration::from_millis(700), desktop.next()).await;
-    assert!(nothing.is_err(), "desktop must not hear a phone's lock attempt");
+    assert!(
+        nothing.is_err(),
+        "desktop must not hear a phone's lock attempt"
+    );
 
     // desktop unlocks -> phone sees it
     desktop

@@ -90,7 +90,18 @@ pub fn new_session() -> SharedSession {
 }
 
 pub fn is_valid_token(session: &Session, token: &str) -> bool {
-    session.token.as_bytes() == token.as_bytes()
+    constant_time_eq(session.token.as_bytes(), token.as_bytes())
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (&x, &y) in a.iter().zip(b) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }
 
 pub fn random_token() -> String {

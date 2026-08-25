@@ -11,7 +11,35 @@ Categories:
 
 ---
 
-## v0.11.0
+## v0.12.0
+
+### Features added
+
+- **Non-blocking in-app paste sheet** — replaced the disruptive native browser `window.prompt()` fallback with a sleek bottom-sheet modal for clipboard paste on mobile/HTTP networks. Supports <kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>Enter</kbd> quick insert.
+- **Enhanced dialog accessibility & focus trapping** — added `aria-labelledby` linkages on all modal dialogs, automatic active element focus restore on close, loop keyboard focus trapping (<kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd>), and accurate shortcut documentation (removed non-working `Ctrl+F` row).
+
+### UI/UX changes or overhaul
+
+- **Mobile action bar hierarchy** — promoted Copy and Paste buttons to primary prominent controls with accent borders; transformed secondary tools into a cleaner, minimal presentation.
+- **Unified 4-tier typography scale** — consolidated arbitrary subpixel font sizes into standard tokens (`--text-xs`, `--text-sm`, `--text-base`, `--text-lg`) for crisp rendering across all displays.
+- **Polished dark mode QR presentation** — updated the QR container card to blend with theme tokens while keeping a clean white inset for the QR code to ensure 100% camera scannability.
+- **Consolidated action DOM** — eliminated redundant duplicated button definitions between the header and footer, streamlining the DOM and reducing layout overhead.
+- **Enhanced toast feedback system** — categorized toasts with semantic types (success, info, error) with tailored display durations (1.5s, 2.5s, 3.5s) and smooth stacking animations.
+
+### Error and bug fixes
+
+- **WebSocket payload size limits** — enforced 1MB text limit on incoming messages and WebSocket upgrade frame/message limits (`1MB + 4KB`) to prevent memory exhaustion.
+- **Cross-origin /reset protection (CSRF)** — enforced `X-Ephe-Client` header verification on `/reset`, preventing unauthorized reset triggers from cross-origin pages.
+- **Constant-time token validation** — implemented timing-safe constant-time comparison for session tokens.
+- **CI pipeline formatting & clippy lints** — resolved rustfmt formatting and clippy lints across all test suites and modules for reliable GitHub Actions verification.
+
+### Other
+
+- Version 0.12.0.
+
+---
+
+## v0.11.0 (released)
 
 ### Features added
 

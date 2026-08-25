@@ -74,7 +74,10 @@ async fn main() {
         println!("ephe: other interfaces available:");
         for c in &candidates {
             if c.ip != lan_ip {
-                println!("        {}  http://{}:{}/?token={}", c.name, c.ip, port, token);
+                println!(
+                    "        {}  http://{}:{}/?token={}",
+                    c.name, c.ip, port, token
+                );
             }
         }
         println!("ephe: override with EPHE_IP=192.168.x.x if the phone is on a different network");

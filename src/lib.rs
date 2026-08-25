@@ -23,7 +23,10 @@ pub mod test_support {
             if s.desktop.is_some() {
                 return Err("desktop already connected");
             }
-            s.desktop = Some(Client { id: crate::session::random_id(), tx });
+            s.desktop = Some(Client {
+                id: crate::session::random_id(),
+                tx,
+            });
             Ok(())
         } else {
             if !crate::session::is_valid_token(s, token) {
@@ -32,7 +35,10 @@ pub mod test_support {
             if s.mobiles.len() >= crate::session::MAX_MOBILES {
                 return Err("session full: max 2 mobiles");
             }
-            s.mobiles.push(Client { id: crate::session::random_id(), tx });
+            s.mobiles.push(Client {
+                id: crate::session::random_id(),
+                tx,
+            });
             Ok(())
         }
     }
@@ -79,7 +85,10 @@ pub mod test_support {
         s.text.clear();
         let new_token = crate::session::random_token();
         s.token = new_token.clone();
-        let url = format!("http://localhost:{}/?role=desktop&token={}", port, new_token);
+        let url = format!(
+            "http://localhost:{}/?role=desktop&token={}",
+            port, new_token
+        );
         (dtx, mtxs, url)
     }
 }

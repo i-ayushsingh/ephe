@@ -8,21 +8,21 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         Query,
     },
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use futures::{SinkExt, StreamExt};
-use qrcode::QrCode;
 use qrcode::render::svg;
+use qrcode::QrCode;
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::manifest;
 use crate::session::{
-    is_valid_token, random_id, random_token, Client, ClientMsg, DeviceInfo, MAX_MOBILES,
-    ServerMsg, SharedSession,
+    is_valid_token, random_id, random_token, Client, ClientMsg, DeviceInfo, ServerMsg,
+    SharedSession, MAX_MOBILES,
 };
 
 struct AppState {
@@ -33,17 +33,18 @@ struct AppState {
     heartbeat_secs: u64,
 }
 
-pub fn build_router(
-    session: SharedSession,
-    port: u16,
-    lan_ip: String,
-) -> Router {
+pub fn build_router(session: SharedSession, port: u16, lan_ip: String) -> Router {
     // ponytail: env knob so a test can shrink the heartbeat; default 10s.
     let heartbeat_secs: u64 = std::env::var("EPHE_HEARTBEAT_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(10);
-    let state = Arc::new(AppState { session, port, lan_ip, heartbeat_secs });
+    let state = Arc::new(AppState {
+        session,
+        port,
+        lan_ip,
+        heartbeat_secs,
+    });
     Router::new()
         .route("/", get(index))
         .route("/style.css", get(css))
@@ -63,7 +64,10 @@ async fn index() -> Html<&'static str> {
 }
 
 async fn css() -> Response {
-    ([("content-type", "text/css; charset=utf-8")], include_str!("style.css"))
+    (
+        [("content-type", "text/css; charset=utf-8")],
+        include_str!("style.css"),
+    )
         .into_response()
 }
 
@@ -77,10 +81,7 @@ async fn js() -> Response {
 
 async fn qr(axum::extract::State(state): axum::extract::State<Arc<AppState>>) -> Response {
     let token = state.session.lock().await.token.clone();
-    let url = format!(
-        "http://{}:{}/?token={}",
-        state.lan_ip, state.port, token
-    );
+    let url = format!("http://{}:{}/?token={}", state.lan_ip, state.port, token);
     let code = match QrCode::new(url.as_bytes()) {
         Ok(c) => c,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -101,23 +102,45 @@ async fn mobile_url(axum::extract::State(state): axum::extract::State<Arc<AppSta
 }
 
 async fn text_logo() -> Response {
-    ([("content-type", "image/png")], &include_bytes!("../text-logo.png")[..]).into_response()
+    (
+        [("content-type", "image/png")],
+        &include_bytes!("../text-logo.png")[..],
+    )
+        .into_response()
 }
 
 /// The bundled pixel font (Press Start 2P, OFL) for the "pixel" editor font.
 async fn pixel_font() -> Response {
-    ([("content-type", "font/ttf")], &include_bytes!("../PressStart2P-Regular.ttf")[..]).into_response()
+    (
+        [("content-type", "font/ttf")],
+        &include_bytes!("../PressStart2P-Regular.ttf")[..],
+    )
+        .into_response()
 }
 
 async fn logo() -> Response {
-    ([("content-type", "image/png")], &include_bytes!("../Logo.png")[..]).into_response()
+    (
+        [("content-type", "image/png")],
+        &include_bytes!("../Logo.png")[..],
+    )
+        .into_response()
 }
+
+const MAX_TEXT_LEN: usize = 1_048_576; // 1 MB payload limit
 
 async fn reset(
     Query(q): Query<WsQuery>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> Response {
+    // ponytail: require X-Ephe-Client custom header to protect loopback/LAN
+    // endpoints from cross-origin CSRF (e.g. malicious webpages executing
+    // no-cors fetch/form submissions to localhost).
+    if !headers.contains_key("x-ephe-client") {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     let token = q.token.unwrap_or_default();
     let mut s = state.session.lock().await;
     // ponytail: loopback = the user's own machine, trusted exactly like the
@@ -173,15 +196,12 @@ async fn ws(
 ) -> Response {
     let is_loopback = addr.ip().is_loopback();
     let token = q.token.unwrap_or_default();
-    ws.on_upgrade(move |socket| handle_socket(socket, state, is_loopback, token))
+    ws.max_frame_size(MAX_TEXT_LEN + 4096)
+        .max_message_size(MAX_TEXT_LEN + 4096)
+        .on_upgrade(move |socket| handle_socket(socket, state, is_loopback, token))
 }
 
-async fn handle_socket(
-    socket: WebSocket,
-    state: Arc<AppState>,
-    is_loopback: bool,
-    token: String,
-) {
+async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: bool, token: String) {
     let role: &'static str = if is_loopback { "desktop" } else { "mobile" };
     let (tx, mut rx) = mpsc::unbounded_channel::<ServerMsg>();
     let (mut sink, mut stream) = socket.split();
@@ -203,7 +223,10 @@ async fn handle_socket(
         }
     };
 
-    let _ = tx.send(ServerMsg::Init { text: accepted, locked });
+    let _ = tx.send(ServerMsg::Init {
+        text: accepted,
+        locked,
+    });
     publish_manifest(&state).await;
     // ponytail: include the joiner so a second phone immediately shows as
     // connected (and gets the join toast) instead of staying "waiting".
@@ -212,7 +235,9 @@ async fn handle_socket(
     {
         let s = state.session.lock().await;
         if let Some(d) = s.desktop.as_ref() {
-            let _ = d.tx.send(ServerMsg::Devices { devices: device_list(&s) });
+            let _ = d.tx.send(ServerMsg::Devices {
+                devices: device_list(&s),
+            });
         }
     }
 
@@ -256,6 +281,9 @@ async fn handle_socket(
                         if let Ok(cmsg) = serde_json::from_str::<ClientMsg>(&t) {
                             match cmsg {
                                 ClientMsg::Text { text } => {
+                                    if text.len() > MAX_TEXT_LEN {
+                                        continue;
+                                    }
                                     {
                                         let mut s = state.session.lock().await;
                                         // ponytail: enforce lock server-side — frontend lock is
@@ -346,7 +374,10 @@ fn accept_into_session(
         if s.desktop.is_some() {
             return Err("desktop already connected");
         }
-        s.desktop = Some(Client { id: random_id(), tx });
+        s.desktop = Some(Client {
+            id: random_id(),
+            tx,
+        });
     } else {
         if !is_valid_token(s, token) {
             return Err("invalid token");
@@ -354,7 +385,10 @@ fn accept_into_session(
         if s.mobiles.len() >= MAX_MOBILES {
             return Err("session full: max 2 mobiles");
         }
-        s.mobiles.push(Client { id: random_id(), tx });
+        s.mobiles.push(Client {
+            id: random_id(),
+            tx,
+        });
     }
     Ok(())
 }
@@ -370,11 +404,7 @@ fn device_list(s: &crate::session::Session) -> Vec<DeviceInfo> {
         .collect()
 }
 
-async fn on_disconnect(
-    state: &AppState,
-    role: &str,
-    me: &mpsc::UnboundedSender<ServerMsg>,
-) {
+async fn on_disconnect(state: &AppState, role: &str, me: &mpsc::UnboundedSender<ServerMsg>) {
     let others = {
         let mut s = state.session.lock().await;
         if role == "desktop" {

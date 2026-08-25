@@ -4,16 +4,20 @@
 
 use std::future::IntoFuture;
 
-use ephe::session::new_session;
 use ephe::server::build_router;
-use futures::{SinkExt, StreamExt};
+use ephe::session::new_session;
+use futures::StreamExt;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
-type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+type Ws =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 async fn connect(url: &str) -> Ws {
-    tokio_tungstenite::connect_async(url).await.expect("connect").0
+    tokio_tungstenite::connect_async(url)
+        .await
+        .expect("connect")
+        .0
 }
 
 async fn recv_json(ws: &mut Ws) -> serde_json::Value {

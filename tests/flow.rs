@@ -140,7 +140,9 @@ async fn reset_rotates_token_and_disconnects_clients() {
         (d, m, url)
     };
 
-    dtx.unwrap().send(ServerMsg::Reset { url: url.clone() }).unwrap();
+    dtx.unwrap()
+        .send(ServerMsg::Reset { url: url.clone() })
+        .unwrap();
     for m in mtxs {
         m.send(ServerMsg::PeerLeft).unwrap();
     }
@@ -158,29 +160,42 @@ async fn reset_rotates_token_and_disconnects_clients() {
 
 #[test]
 fn server_msg_serializes_with_type_tag() {
-    let s = ServerMsg::Init { text: "hi".into(), locked: false };
+    let s = ServerMsg::Init {
+        text: "hi".into(),
+        locked: false,
+    };
     assert_eq!(
         serde_json::to_string(&s).unwrap(),
         r#"{"type":"init","text":"hi","locked":false}"#
     );
 
     let s = ServerMsg::PeerJoined;
-    assert_eq!(serde_json::to_string(&s).unwrap(), r#"{"type":"peer_joined"}"#);
+    assert_eq!(
+        serde_json::to_string(&s).unwrap(),
+        r#"{"type":"peer_joined"}"#
+    );
 
-    let s = ServerMsg::Reset { url: "http://localhost:1234/?token=abc".into() };
+    let s = ServerMsg::Reset {
+        url: "http://localhost:1234/?token=abc".into(),
+    };
     let j = serde_json::to_string(&s).unwrap();
     assert!(j.contains(r#""type":"reset""#));
     assert!(j.contains(r#""url":"http://localhost:1234/?token=abc""#));
 
     let s = ServerMsg::Devices {
-        devices: vec![DeviceInfo { id: "aabbccdd".into(), label: "phone 1".into() }],
+        devices: vec![DeviceInfo {
+            id: "aabbccdd".into(),
+            label: "phone 1".into(),
+        }],
     };
     let j = serde_json::to_string(&s).unwrap();
     assert!(j.contains(r#""type":"devices""#));
     assert!(j.contains(r#""label":"phone 1""#));
     assert!(j.contains(r#""id":"aabbccdd""#));
 
-    let s = ServerMsg::Seen { label: "phone 2".into() };
+    let s = ServerMsg::Seen {
+        label: "phone 2".into(),
+    };
     assert_eq!(
         serde_json::to_string(&s).unwrap(),
         r#"{"type":"seen","label":"phone 2"}"#
