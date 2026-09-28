@@ -139,5 +139,5 @@ fn score_candidate(c: &Candidate) -> (u8, u8) {
     } else {
         1
     };
-    (kind_score, range)
+    (range, kind_score)
 }

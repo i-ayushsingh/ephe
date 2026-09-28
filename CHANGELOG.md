@@ -11,6 +11,25 @@ Categories:
 
 ---
 
+## v0.14.0
+
+### Features added
+
+- **Mobile disconnect grace period** — added a 45-second reconnection grace period (`EPHE_GRACE_SECS`, 2s in test mode) when mobile devices disconnect while desktop remains active. Prevents abrupt session teardowns and pad erasure when switching mobile apps or locking screens.
+- **Background visibility & auto-resume** — mobile and background web tabs now pause reconnection attempts while hidden (`document.visibilityState === "hidden"`) to preserve retry limits, and automatically reconnect upon `visibilitychange`, `pageshow`, and `focus`.
+- **Private IP candidate scoring priority** — prioritized private IP address ranges over interface types in candidate scoring, improving automatic LAN IP selection on machines with virtual adapters or VPN interfaces.
+
+### UI/UX changes or overhaul
+
+- **Seamless mobile resume UX** — eliminated premature "session ended" lockouts during temporary mobile backgrounding; automatically restores editor read/write state and connects smoothly.
+- **Real-time desktop device count tracking** — desktop client accurately reflects connected phone counts as devices temporarily drop or reconnect.
+
+### Other
+
+- Version 0.14.0.
+
+---
+
 ## v0.13.0
 
 ### Features added

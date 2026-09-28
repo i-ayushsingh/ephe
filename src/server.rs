@@ -201,6 +201,7 @@ async fn reset(
     s.text.clear();
     s.locked = false;
     s.token = new_token;
+    s.disconnect_gen = s.disconnect_gen.wrapping_add(1);
 
     println!("ephe: session reset");
     println!("ephe: new desktop: {}", new_desktop_url);
@@ -364,6 +365,15 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: boo
                                         if let Some(pos) = s.mobiles.iter().position(|m| m.id == id) {
                                             let kicked = s.mobiles.remove(pos);
                                             let _ = kicked.tx.send(ServerMsg::Kicked);
+                                            s.text.clear();
+                                            let mut others = Vec::new();
+                                            if let Some(d) = s.desktop.as_ref() {
+                                                others.push(d.tx.clone());
+                                            }
+                                            others.extend(s.mobiles.iter().map(|m| m.tx.clone()));
+                                            for t in others {
+                                                let _ = t.send(ServerMsg::PeerLeft);
+                                            }
                                         }
                                     }
                                 }
@@ -388,7 +398,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: boo
     if should_close {
         let _ = sink.close().await;
     }
-    on_disconnect(&state, role, &tx).await;
+    on_disconnect(state, role, &tx).await;
 }
 
 fn accept_into_session(
@@ -409,9 +419,11 @@ fn accept_into_session(
         if !is_valid_token(s, token) {
             return Err("invalid token");
         }
+        s.mobiles.retain(|m| !m.tx.is_closed());
         if s.mobiles.len() >= MAX_MOBILES {
             return Err("session full: max 2 mobiles");
         }
+        s.disconnect_gen = s.disconnect_gen.wrapping_add(1);
         s.mobiles.push(Client {
             id: random_id(),
             tx,
@@ -431,31 +443,90 @@ fn device_list(s: &crate::session::Session) -> Vec<DeviceInfo> {
         .collect()
 }
 
-async fn on_disconnect(state: &AppState, role: &str, me: &mpsc::UnboundedSender<ServerMsg>) {
-    let others = {
-        let mut s = state.session.lock().await;
-        if role == "desktop" {
+async fn on_disconnect(state: Arc<AppState>, role: &str, me: &mpsc::UnboundedSender<ServerMsg>) {
+    if role == "desktop" {
+        let others = {
+            let mut s = state.session.lock().await;
             s.desktop = None;
-        } else {
-            s.mobiles.retain(|m| !m.tx.same_channel(me));
-        }
-        // ponytail: ephemeral by design — wipe on any disconnect
-        s.text.clear();
-        let mut txs = Vec::new();
-        if role == "desktop" {
+            s.text.clear();
+            let mut txs = Vec::new();
             txs.extend(s.mobiles.iter().map(|m| m.tx.clone()));
-        } else {
-            if let Some(d) = s.desktop.as_ref() {
-                txs.push(d.tx.clone());
-            }
-            txs.extend(s.mobiles.iter().map(|m| m.tx.clone()));
+            txs
+        };
+        for t in others {
+            let _ = t.send(ServerMsg::PeerLeft);
         }
-        txs
-    };
-    for t in others {
-        let _ = t.send(ServerMsg::PeerLeft);
+        publish_manifest(&state).await;
+        return;
     }
-    publish_manifest(state).await;
+
+    // role == "mobile"
+    let (desktop_alive, remaining_mobiles, gen) = {
+        let mut s = state.session.lock().await;
+        s.mobiles.retain(|m| !m.tx.same_channel(me));
+        s.disconnect_gen = s.disconnect_gen.wrapping_add(1);
+        (s.desktop.is_some(), s.mobiles.len(), s.disconnect_gen)
+    };
+
+    publish_manifest(&state).await;
+
+    if !desktop_alive {
+        let mut s = state.session.lock().await;
+        if s.mobiles.is_empty() {
+            s.text.clear();
+        }
+        return;
+    }
+
+    // Desktop is alive! Update desktop's device list so it reflects the change.
+    {
+        let s = state.session.lock().await;
+        if let Some(d) = s.desktop.as_ref() {
+            let _ = d.tx.send(ServerMsg::Devices {
+                devices: device_list(&s),
+            });
+        }
+    }
+
+    // If another phone is still connected, session continues without teardown.
+    if remaining_mobiles > 0 {
+        return;
+    }
+
+    // All phones disconnected, but desktop is still connected.
+    // Give mobile a grace period to reconnect (e.g. user minimized browser to switch apps).
+    let grace_secs: u64 = if state.heartbeat_secs <= 1 {
+        // Fast test mode: within test timeout (keepalive test expects peer_left within 8s)
+        2
+    } else {
+        std::env::var("EPHE_GRACE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(45)
+    };
+
+    let state_clone = Arc::clone(&state);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(grace_secs)).await;
+        let others = {
+            let mut s = state_clone.session.lock().await;
+            if s.disconnect_gen == gen && s.mobiles.is_empty() {
+                // Grace period expired without any mobile reconnecting
+                s.text.clear();
+                let mut txs = Vec::new();
+                if let Some(d) = s.desktop.as_ref() {
+                    txs.push(d.tx.clone());
+                }
+                txs
+            } else {
+                Vec::new()
+            }
+        };
+        for t in others {
+            let _ = t.send(ServerMsg::PeerLeft);
+        }
+        publish_manifest(&state_clone).await;
+    });
 }
 
 /// Refresh the PortPeek manifest after any join/leave (device count changed).

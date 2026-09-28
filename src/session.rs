@@ -14,6 +14,8 @@ pub struct Session {
     pub mobiles: Vec<Client>,
     /// single-writer mode: when true, only the desktop may edit
     pub locked: bool,
+    /// disconnect generation counter for grace period tracking
+    pub disconnect_gen: u64,
 }
 
 /// Hard cap: one desktop + two mobiles, nothing else.
@@ -86,6 +88,7 @@ pub fn new_session() -> SharedSession {
         desktop: None,
         mobiles: Vec::new(),
         locked: false,
+        disconnect_gen: 0,
     }))
 }
 

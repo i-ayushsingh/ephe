@@ -548,11 +548,11 @@ function connect() {
   ws = sock;
   sock.addEventListener("open", () => {
     retryCount = 0;
-    document.body.classList.remove("loading");
+    document.body.classList.remove("loading", "session-ended");
     setStatus("idle", "waiting");
     if (everJoined) {
       everJoined = false;
-      toast("reconnected — fresh pad", "info");
+      toast("reconnected", "info");
     }
   });
   sock.addEventListener("message", onMessage);
@@ -560,15 +560,23 @@ function connect() {
   sock.addEventListener("error", () => onDrop(sock));
 }
 
-// ponytail: any disconnect wipes the session, so "reconnecting" never resumes
-// text — but it does land you back in a fresh pad instead of a dead screen
-// (the wipe frees the desktop slot and keeps the token valid). Bounded
-// retries; terminal states (error/peer_left/kicked/reset) never retry.
+// ponytail: on mobile or background tabs, when the browser is minimized
+// or the user switches apps, mobile browsers pause or close WebSockets.
+// We avoid exhausting retries to a terminal error while hidden, and
+// reconnect automatically when the user returns to the page.
 function onDrop(sock) {
   if (statusEl.dataset.state === "error") return;
   if (ws !== sock || sock._dropped) return; // superseded or already handled
   sock._dropped = true;
-  if (retryCount >= 3) {
+
+  // If the browser is currently hidden/minimized, pause reconnection retries
+  // until the page becomes visible again. Mobile OS blocks/throttles background sockets.
+  if (document.visibilityState === "hidden") {
+    setStatus("lost", "connection paused");
+    return;
+  }
+
+  if (retryCount >= 5) {
     editor.readOnly = true;
     showReset();
     setStatus("error", "session ended");
@@ -577,10 +585,31 @@ function onDrop(sock) {
   retryCount++;
   setStatus("lost", "connection lost");
   setTimeout(() => {
+    if (document.visibilityState === "hidden") return;
     setStatus("reconnecting", "reconnecting\u2026");
     connect();
   }, 700 * retryCount);
 }
+
+function checkConnectionOnResume() {
+  if (document.visibilityState === "visible") {
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      retryCount = 0;
+      if (!isDesktop || statusEl.dataset.state !== "error") {
+        document.body.classList.remove("session-ended");
+        if (!padLocked && !isDesktop) {
+          editor.readOnly = false;
+        }
+        setStatus("reconnecting", "reconnecting\u2026");
+        connect();
+      }
+    }
+  }
+}
+
+document.addEventListener("visibilitychange", checkConnectionOnResume);
+window.addEventListener("pageshow", checkConnectionOnResume);
+window.addEventListener("focus", checkConnectionOnResume);
 
 let applying = false;
 let lastSent = "";
@@ -984,7 +1013,12 @@ function onMessage(ev) {
       undoStack = [];
       redoStack = [];
       updateUndoRedo();
-      if (isDesktop) editor.focus({ preventScroll: true });
+      if (isDesktop) {
+        editor.focus({ preventScroll: true });
+      } else {
+        peerCount = 1;
+        setStatus("connected", "connected");
+      }
       break;
     case "text":
       if (msg.text === lastSent) break;
@@ -1042,7 +1076,13 @@ function onMessage(ev) {
       break;
     case "devices":
       renderDevices(msg.devices);
-      if (isDesktop) setStatus("connected", phoneLabel(msg.devices.length));
+      if (isDesktop) {
+        if (msg.devices.length > 0) {
+          setStatus("connected", phoneLabel(msg.devices.length));
+        } else {
+          setStatus("idle", "waiting");
+        }
+      }
       break;
     case "seen":
       seenRoundTrip.add(msg.label);
