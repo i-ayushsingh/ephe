@@ -9,9 +9,13 @@ pub struct Session {
     /// stable per-process session id (PortPeek manifest filename)
     pub id: String,
     pub token: String,
+    /// 4-digit pairing PIN for easy manual pairing on mobile
+    pub pin: String,
     pub text: String,
     pub desktop: Option<Client>,
     pub mobiles: Vec<Client>,
+    /// in-memory ephemeral files (max 25MB total per session)
+    pub files: Vec<EphemeralFile>,
     /// single-writer mode: when true, only the desktop may edit
     pub locked: bool,
     /// disconnect generation counter for grace period tracking
@@ -21,9 +25,26 @@ pub struct Session {
 /// Hard cap: one desktop + two mobiles, nothing else.
 pub const MAX_MOBILES: usize = 2;
 
+/// Maximum size for any uploaded file (25 MB)
+pub const MAX_FILE_SIZE: usize = 25 * 1024 * 1024;
+
 pub struct Client {
     pub id: String,
-    pub tx: tokio::sync::mpsc::UnboundedSender<ServerMsg>,
+    pub tx: tokio::sync::mpsc::Sender<ServerMsg>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EphemeralFileMeta {
+    pub id: String,
+    pub name: String,
+    pub size: usize,
+    pub mime: String,
+}
+
+#[derive(Clone)]
+pub struct EphemeralFile {
+    pub meta: EphemeralFileMeta,
+    pub data: Vec<u8>,
 }
 
 /// What the desktop's device list shows: which phones are connected, and how
@@ -38,7 +59,11 @@ pub struct DeviceInfo {
 #[serde(tag = "type")]
 pub enum ServerMsg {
     #[serde(rename = "init")]
-    Init { text: String, locked: bool },
+    Init {
+        text: String,
+        locked: bool,
+        files: Vec<EphemeralFileMeta>,
+    },
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "typing")]
@@ -60,6 +85,15 @@ pub enum ServerMsg {
     /// the desktop removed you from the session
     #[serde(rename = "kicked")]
     Kicked,
+    /// new ephemeral file uploaded and ready to download
+    #[serde(rename = "file_available")]
+    FileAvailable { file: EphemeralFileMeta },
+    /// file deleted or removed from memory
+    #[serde(rename = "file_removed")]
+    FileRemoved { id: String },
+    /// latency measurement pong response
+    #[serde(rename = "pong")]
+    Pong { ts: u64 },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,16 +111,25 @@ pub enum ClientMsg {
     /// phone-only: "I just received your text" (read receipt)
     #[serde(rename = "ack")]
     Ack,
+    /// delete an uploaded file
+    #[serde(rename = "delete_file")]
+    DeleteFile { id: String },
+    /// latency measurement ping request
+    #[serde(rename = "ping")]
+    Ping { ts: u64 },
 }
 
 pub fn new_session() -> SharedSession {
     let token = random_token();
+    let pin = random_pin();
     Arc::new(Mutex::new(Session {
         id: random_id(),
         token,
+        pin,
         text: String::new(),
         desktop: None,
         mobiles: Vec::new(),
+        files: Vec::new(),
         locked: false,
         disconnect_gen: 0,
     }))
@@ -94,6 +137,10 @@ pub fn new_session() -> SharedSession {
 
 pub fn is_valid_token(session: &Session, token: &str) -> bool {
     constant_time_eq(session.token.as_bytes(), token.as_bytes())
+}
+
+pub fn is_valid_pin(session: &Session, pin: &str) -> bool {
+    constant_time_eq(session.pin.as_bytes(), pin.trim().as_bytes())
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -112,6 +159,13 @@ pub fn random_token() -> String {
     let mut rng = rand::rng();
     let bytes: [u8; 24] = rng.random();
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+pub fn random_pin() -> String {
+    use rand::Rng;
+    let mut rng = rand::rng();
+    let n: u32 = rng.random_range(1000..=9999);
+    format!("{:04}", n)
 }
 
 pub fn random_id() -> String {

@@ -125,13 +125,11 @@ async fn mobile_disconnect_grace_period_allows_reconnect_without_session_end() {
     let mut got_peer_left = false;
     let check_deadline = tokio::time::Instant::now() + Duration::from_millis(500);
     while tokio::time::Instant::now() < check_deadline {
-        if let Ok(Some(Ok(msg))) =
+        if let Ok(Some(Ok(Message::Text(t)))) =
             tokio::time::timeout(Duration::from_millis(100), dstream.next()).await
         {
-            if let Message::Text(t) = msg {
-                if t.contains(r#""type":"peer_left""#) {
-                    got_peer_left = true;
-                }
+            if t.contains(r#""type":"peer_left""#) {
+                got_peer_left = true;
             }
         }
     }

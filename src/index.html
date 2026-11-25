@@ -5,12 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0a0a0a">
   <meta name="color-scheme" content="light dark">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>ephe</title>
   <link rel="icon" href="/logo.png" type="image/png">
-  <link rel="manifest" href="/manifest.json">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body class="role-desktop loading">
@@ -18,11 +14,14 @@
     <span class="brand"><img src="/text-logo.png" alt="ephe" width="88" height="20"></span>
     <div class="devices" id="devices" aria-label="connected phones"></div>
     <div class="topbar-actions">
+      <input type="file" id="file-input" hidden>
+      <button class="btn btn-sm btn-icon" id="attach-btn" type="button" aria-label="send file" title="send file (max 25 MB)">&#128206;</button>
       <button class="btn btn-sm" id="collapse-btn" type="button">hide qr</button>
       <button class="btn btn-sm lock-btn" id="lock-btn" type="button">lock pad</button>
       <button class="btn btn-sm" id="history-btn" type="button">history</button>
       <button class="btn btn-sm btn-icon" id="download-btn" type="button" aria-label="download text file" title="download text file"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:block;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
       <button class="btn btn-sm btn-icon" id="theme-btn" type="button" aria-label="switch theme">&#9788;</button>
+      <span class="ctx-badge" id="ctx-badge"></span>
       <span class="status" id="status" aria-live="polite">
         <span class="dot" aria-hidden="true"></span>
         <span class="label" id="status-label">waiting</span>
@@ -35,7 +34,12 @@
       <div class="qr-card">
         <img id="qr" src="/qr" alt="QR code — scan with phone to connect" width="180" height="180" decoding="async">
       </div>
-      <p class="hint" id="caption">scan to connect a phone</p>
+      <p class="hint" id="caption">scan QR, then enter PIN</p>
+      <div class="pin-badge" id="pin-badge">
+        <span class="pin-title">pairing PIN:</span>
+        <span class="pin-code" id="pin-code">----</span>
+      </div>
+      <select id="iface-select" class="iface-select" hidden aria-label="network interface"></select>
       <div class="url-row" id="url-row" hidden>
         <input id="url-text" class="url-text" type="text" readonly aria-label="mobile link">
         <button class="btn btn-sm" id="copy-url-btn" type="button">copy link</button>
@@ -45,6 +49,13 @@
 
     <section class="editor-panel">
       <p class="editor-hint" id="editor-hint" hidden></p>
+      
+      <!-- In-memory shared files bar -->
+      <div class="files-bar" id="files-bar" hidden>
+        <div class="files-bar-title">Shared in-memory files:</div>
+        <div class="files-chips" id="files-chips"></div>
+      </div>
+
       <div class="editor-wrap" id="editor-wrap">
         <div class="gutter" id="gutter" aria-hidden="true" hidden></div>
         <textarea id="editor"
@@ -56,30 +67,47 @@
                   inputmode="text"
                   enterkeyhint="done"
                   aria-label="shared text"></textarea>
+        <div class="drop-overlay" id="drop-overlay" hidden>
+          <div class="drop-message">&#128206; Drop file to send (max 25MB)</div>
+        </div>
       </div>
       <footer class="footer">
         <p class="footer-hint" id="footer-hint">start typing — text syncs instantly</p>
-        <div class="footer-actions">
-          <button class="btn btn-sm undo-btn" id="undo-btn" type="button" disabled aria-label="undo">&#8630; <span class="btn-txt">undo</span></button>
+        <div class="footer-actions" id="footer-actions">
+          <button class="btn btn-sm undo-btn footer-secondary" id="undo-btn" type="button" disabled aria-label="undo">&#8630; <span class="btn-txt">undo</span></button>
           <button class="btn btn-sm" id="copy-btn" type="button">copy</button>
-          <button class="btn btn-sm transform-btn" id="transform-btn" type="button" aria-label="transform menu">transform</button>
+          <button class="btn btn-sm transform-btn footer-secondary" id="transform-btn" type="button" aria-label="transform menu">transform</button>
           <button class="btn btn-sm" id="paste-btn" type="button">paste</button>
-          <button class="btn btn-sm redo-btn" id="redo-btn" type="button" disabled aria-label="redo">&#8631; <span class="btn-txt">redo</span></button>
+          <button class="btn btn-sm redo-btn footer-secondary" id="redo-btn" type="button" disabled aria-label="redo">&#8631; <span class="btn-txt">redo</span></button>
           <button class="btn btn-sm" id="clear-btn" type="button">clear</button>
-          <button class="btn btn-sm" id="lines-btn" type="button" aria-label="toggle line numbers">lines off</button>
-          <button class="btn btn-sm" id="size-down-btn" type="button" aria-label="decrease text size">A&minus;</button>
-          <button class="btn btn-sm" id="size-up-btn" type="button" aria-label="increase text size">A+</button>
-          <button class="btn btn-sm size-reset" id="size-reset-btn" type="button" hidden>size reset</button>
-          <button class="btn btn-sm font-toggle" id="font-btn" type="button">font: system</button>
-          <button class="btn btn-sm wrap-toggle" id="wrap-btn" type="button">wrap on</button>
-          <button class="btn btn-sm shortcuts-btn" id="shortcuts-btn" type="button" aria-label="keyboard shortcuts">keys</button>
-          <button class="btn btn-sm scan-btn" id="scan-btn" type="button" aria-label="scan qr code">scan qr</button>
+          <button class="btn btn-sm footer-secondary" id="lines-btn" type="button" aria-label="toggle line numbers">lines off</button>
+          <button class="btn btn-sm footer-secondary" id="size-down-btn" type="button" aria-label="decrease text size">A&minus;</button>
+          <button class="btn btn-sm footer-secondary" id="size-up-btn" type="button" aria-label="increase text size">A+</button>
+          <button class="btn btn-sm size-reset footer-secondary" id="size-reset-btn" type="button" hidden>size reset</button>
+          <button class="btn btn-sm font-toggle footer-secondary" id="font-btn" type="button">font: system</button>
+          <button class="btn btn-sm wrap-toggle footer-secondary" id="wrap-btn" type="button">wrap on</button>
+          <button class="btn btn-sm shortcuts-btn footer-secondary" id="shortcuts-btn" type="button" aria-label="keyboard shortcuts">keys</button>
+          <button class="btn btn-sm tools-btn" id="tools-btn" type="button" aria-expanded="false" aria-label="more tools">&#9881; tools</button>
           <button class="btn btn-sm reset-btn" id="reset-btn" type="button" hidden>start new session</button>
         </div>
         <p class="footer-count" id="footer-count">0 chars · 0 words · 0 lines</p>
       </footer>
     </section>
   </main>
+
+  <!-- 4-digit PIN Pairing Modal for Mobile -->
+  <div class="transform-panel" id="pin-panel" hidden>
+    <div class="transform-card pin-card" role="dialog" aria-modal="true" aria-labelledby="pin-title">
+      <h2 class="transform-title" id="pin-title">pair with computer</h2>
+      <p class="hint">enter the 4-digit PIN shown under the QR code on your computer</p>
+      <div class="pin-input-wrap">
+        <input type="text" id="pin-input" class="pin-input" maxlength="4" pattern="[0-9]*" inputmode="numeric" placeholder="••••" autocomplete="one-time-code">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-sm" id="pin-submit" type="button">connect</button>
+      </div>
+    </div>
+  </div>
 
   <div class="transform-panel" id="shortcuts-panel" hidden>
     <div class="transform-card" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">
@@ -119,20 +147,6 @@
       <div class="modal-actions">
         <button class="btn btn-sm" id="paste-submit" type="button">insert</button>
         <button class="btn btn-sm" id="paste-close" type="button">cancel</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="transform-panel" id="scan-panel" hidden>
-    <div class="transform-card scan-card" role="dialog" aria-modal="true" aria-labelledby="scan-title">
-      <h2 class="transform-title" id="scan-title">scan desktop qr</h2>
-      <div class="scan-viewfinder">
-        <video id="scan-video" playsinline muted autoplay></video>
-        <div class="scan-target" aria-hidden="true"></div>
-      </div>
-      <p class="hint" id="scan-hint">point camera at the desktop QR code</p>
-      <div class="modal-actions">
-        <button class="btn btn-sm" id="scan-close" type="button">cancel</button>
       </div>
     </div>
   </div>

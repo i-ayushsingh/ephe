@@ -6,9 +6,9 @@ use axum::{
     extract::{
         connect_info::ConnectInfo,
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Query,
+        DefaultBodyLimit, Path, Query,
     },
-    http::{HeaderMap, StatusCode},
+    http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Router,
@@ -21,20 +21,18 @@ use tokio::sync::mpsc;
 
 use crate::manifest;
 use crate::session::{
-    is_valid_token, random_id, random_token, Client, ClientMsg, DeviceInfo, ServerMsg,
-    SharedSession, MAX_MOBILES,
+    is_valid_pin, is_valid_token, random_id, random_token, Client, ClientMsg, DeviceInfo,
+    EphemeralFile, EphemeralFileMeta, ServerMsg, SharedSession, MAX_FILE_SIZE, MAX_MOBILES,
 };
 
 struct AppState {
     session: SharedSession,
     port: u16,
     lan_ip: String,
-    /// WS heartbeat period in seconds; peers silent for 3x this get dropped.
     heartbeat_secs: u64,
 }
 
 pub fn build_router(session: SharedSession, port: u16, lan_ip: String) -> Router {
-    // ponytail: env knob so a test can shrink the heartbeat; default 10s.
     let heartbeat_secs: u64 = std::env::var("EPHE_HEARTBEAT_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -45,6 +43,7 @@ pub fn build_router(session: SharedSession, port: u16, lan_ip: String) -> Router
         lan_ip,
         heartbeat_secs,
     });
+
     Router::new()
         .route("/", get(index))
         .route("/style.css", get(css))
@@ -54,8 +53,12 @@ pub fn build_router(session: SharedSession, port: u16, lan_ip: String) -> Router
         .route("/font.ttf", get(pixel_font))
         .route("/qr", get(qr))
         .route("/url", get(mobile_url))
-        .route("/manifest.json", get(manifest_json))
-        .route("/manifest.webmanifest", get(manifest_json))
+        .route("/pair", get(pair_pin))
+        .route(
+            "/upload",
+            post(upload_file).layer(DefaultBodyLimit::max(MAX_FILE_SIZE + 4096)),
+        )
+        .route("/file/:id", get(download_file))
         .route("/reset", post(reset))
         .route("/ws", get(ws))
         .with_state(state)
@@ -63,29 +66,6 @@ pub fn build_router(session: SharedSession, port: u16, lan_ip: String) -> Router
 
 async fn index() -> Html<&'static str> {
     Html(include_str!("index.html"))
-}
-
-async fn manifest_json() -> Response {
-    (
-        [("content-type", "application/manifest+json; charset=utf-8")],
-        r##"{
-  "name": "ephe",
-  "short_name": "ephe",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#0a0a0a",
-  "theme_color": "#0a0a0a",
-  "icons": [
-    {
-      "src": "/logo.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ]
-}"##,
-    )
-        .into_response()
 }
 
 async fn css() -> Response {
@@ -104,9 +84,21 @@ async fn js() -> Response {
         .into_response()
 }
 
-async fn qr(axum::extract::State(state): axum::extract::State<Arc<AppState>>) -> Response {
-    let token = state.session.lock().await.token.clone();
-    let url = format!("http://{}:{}/?token={}", state.lan_ip, state.port, token);
+#[derive(Deserialize)]
+struct QrQuery {
+    ip: Option<String>,
+}
+
+/// QR code points to the LAN base URL without embedding the session token,
+/// so mobile browsers must enter the 4-digit PIN after scanning.
+async fn qr(
+    Query(q): Query<QrQuery>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> Response {
+    let ip =
+        q.ip.filter(|candidate| crate::net::list_ips().iter().any(|c| &c.ip == candidate))
+            .unwrap_or_else(|| state.lan_ip.clone());
+    let url = format!("http://{}:{}/", ip, state.port);
     let code = match QrCode::new(url.as_bytes()) {
         Ok(c) => c,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -118,12 +110,205 @@ async fn qr(axum::extract::State(state): axum::extract::State<Arc<AppState>>) ->
     ([("content-type", "image/svg+xml")], svg).into_response()
 }
 
-/// The mobile URL as plain text, so the desktop can show it as a QR fallback.
-async fn mobile_url(axum::extract::State(state): axum::extract::State<Arc<AppState>>) -> Response {
-    let token = state.session.lock().await.token.clone();
-    let url = format!("http://{}:{}/?token={}", state.lan_ip, state.port, token);
-    let body = serde_json::json!({ "url": url }).to_string();
+/// The mobile URL, 4-digit pairing PIN, and available LAN interfaces.
+async fn mobile_url(
+    Query(q): Query<WsQuery>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> Response {
+    let s = state.session.lock().await;
+    let token = q.token.unwrap_or_default();
+    // Allow loopback (desktop host UI) or already-authenticated clients
+    if !addr.ip().is_loopback() && !is_valid_token(&s, &token) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let url = format!("http://{}:{}/", state.lan_ip, state.port);
+    let candidates: Vec<_> = crate::net::list_ips()
+        .into_iter()
+        .map(|c| serde_json::json!({ "name": c.name, "ip": c.ip }))
+        .collect();
+    let body = serde_json::json!({
+        "url": url,
+        "pin": s.pin,
+        "port": state.port,
+        "ip": state.lan_ip,
+        "candidates": candidates
+    })
+    .to_string();
     ([("content-type", "application/json")], body).into_response()
+}
+
+#[derive(Deserialize)]
+struct PinQuery {
+    pin: Option<String>,
+}
+
+/// Allows mobile devices to exchange the 4-digit PIN for the session token.
+async fn pair_pin(
+    Query(q): Query<PinQuery>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> Response {
+    let pin = q.pin.unwrap_or_default();
+    let s = state.session.lock().await;
+    if is_valid_pin(&s, &pin) {
+        let body = serde_json::json!({ "token": s.token }).to_string();
+        ([("content-type", "application/json")], body).into_response()
+    } else {
+        (StatusCode::UNAUTHORIZED, "invalid pin").into_response()
+    }
+}
+
+const BLOCKED_EXTENSIONS: &[&str] = &[
+    ".exe", ".bat", ".cmd", ".ps1", ".scr", ".vbs", ".msi", ".dll", ".com", ".pif", ".hta", ".cpl",
+    ".jar",
+];
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let h1 = (bytes[i + 1] as char).to_digit(16);
+            let h2 = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(a), Some(b)) = (h1, h2) {
+                out.push(((a << 4) | b) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn sanitize_filename(raw: &str) -> String {
+    let decoded = percent_decode(raw);
+    let base = decoded.rsplit(['/', '\\']).next().unwrap_or("");
+    let clean: String = base
+        .chars()
+        .filter(|&c| c != '"' && !c.is_control() && c != '/' && c != '\\')
+        .collect();
+    let trimmed = clean.trim();
+    if trimmed.is_empty() || trimmed == "." || trimmed == ".." {
+        "file".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn is_blocked_extension(filename: &str) -> bool {
+    let lower = filename.trim_end_matches('.').to_ascii_lowercase();
+    BLOCKED_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// Upload an ephemeral in-memory file (max 25MB). Never saved to disk.
+async fn upload_file(
+    Query(q): Query<WsQuery>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    body: axum::body::Bytes,
+) -> Response {
+    let token = q.token.unwrap_or_default();
+    {
+        let s_check = state.session.lock().await;
+        if !addr.ip().is_loopback() && !is_valid_token(&s_check, &token) {
+            return StatusCode::FORBIDDEN.into_response();
+        }
+    }
+
+    if body.len() > MAX_FILE_SIZE {
+        return (StatusCode::PAYLOAD_TOO_LARGE, "file exceeds 25 MB limit").into_response();
+    }
+
+    let filename = headers
+        .get("x-filename")
+        .and_then(|v| v.to_str().ok())
+        .map(sanitize_filename)
+        .unwrap_or_else(|| "file".to_string());
+
+    if is_blocked_extension(&filename) {
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "executable/script file types are blocked",
+        )
+            .into_response();
+    }
+
+    let mime = headers
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+
+    let file_id = random_id();
+    let meta = EphemeralFileMeta {
+        id: file_id.clone(),
+        name: filename,
+        size: body.len(),
+        mime,
+    };
+
+    let eph_file = EphemeralFile {
+        meta: meta.clone(),
+        data: body.to_vec(),
+    };
+
+    {
+        let mut s = state.session.lock().await;
+        let current_total: usize = s.files.iter().map(|f| f.data.len()).sum();
+        if current_total.saturating_add(body.len()) > MAX_FILE_SIZE {
+            return (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "session file storage exceeds 25 MB limit",
+            )
+                .into_response();
+        }
+        s.files.push(eph_file);
+    }
+
+    broadcast(
+        &state,
+        ServerMsg::FileAvailable { file: meta },
+        "server",
+        None,
+    )
+    .await;
+    (
+        StatusCode::OK,
+        serde_json::json!({ "id": file_id }).to_string(),
+    )
+        .into_response()
+}
+
+/// Download an ephemeral in-memory file.
+async fn download_file(
+    Path(id): Path<String>,
+    Query(q): Query<WsQuery>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> Response {
+    let token = q.token.unwrap_or_default();
+    let s = state.session.lock().await;
+    if !addr.ip().is_loopback() && !is_valid_token(&s, &token) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if let Some(f) = s.files.iter().find(|f| f.meta.id == id) {
+        let mut resp = f.data.clone().into_response();
+        if let Ok(mime_val) = f.meta.mime.parse() {
+            resp.headers_mut().insert(header::CONTENT_TYPE, mime_val);
+        }
+        let disposition = format!("attachment; filename=\"{}\"", f.meta.name);
+        if let Ok(disp_val) = disposition.parse() {
+            resp.headers_mut()
+                .insert(header::CONTENT_DISPOSITION, disp_val);
+        }
+        resp
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
 }
 
 async fn text_logo() -> Response {
@@ -134,7 +319,6 @@ async fn text_logo() -> Response {
         .into_response()
 }
 
-/// The bundled pixel font (Press Start 2P, OFL) for the "pixel" editor font.
 async fn pixel_font() -> Response {
     (
         [("content-type", "font/ttf")],
@@ -159,18 +343,12 @@ async fn reset(
     headers: HeaderMap,
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> Response {
-    // ponytail: require X-Ephe-Client custom header to protect loopback/LAN
-    // endpoints from cross-origin CSRF (e.g. malicious webpages executing
-    // no-cors fetch/form submissions to localhost).
     if !headers.contains_key("x-ephe-client") {
         return StatusCode::FORBIDDEN.into_response();
     }
 
     let token = q.token.unwrap_or_default();
     let mut s = state.session.lock().await;
-    // ponytail: loopback = the user's own machine, trusted exactly like the
-    // desktop WS join (tokenless). LAN clients still need the token — the
-    // host-only reset privilege never escapes to the network.
     if !addr.ip().is_loopback() && !is_valid_token(&s, &token) {
         return StatusCode::FORBIDDEN.into_response();
     }
@@ -179,33 +357,31 @@ async fn reset(
         "http://localhost:{}/?role=desktop&token={}",
         state.port, new_token
     );
-    let new_mobile_url = format!(
-        "http://{}:{}/?token={}",
-        state.lan_ip, state.port, new_token
-    );
+    let new_mobile_url = format!("http://{}:{}/", state.lan_ip, state.port);
 
-    // ponytail: tell the desktop and mobiles to navigate to the new session,
-    // then rotate the token and wipe the slate.
     if let Some(c) = s.desktop.as_ref() {
-        let _ = c.tx.send(ServerMsg::Reset {
+        let _ = c.tx.try_send(ServerMsg::Reset {
             url: new_desktop_url.clone(),
         });
     }
     for m in s.mobiles.iter() {
-        let _ = m.tx.send(ServerMsg::Reset {
+        let _ = m.tx.try_send(ServerMsg::Reset {
             url: new_mobile_url.clone(),
         });
     }
     s.desktop = None;
     s.mobiles.clear();
+    s.files.clear();
     s.text.clear();
     s.locked = false;
     s.token = new_token;
+    s.pin = crate::session::random_pin();
     s.disconnect_gen = s.disconnect_gen.wrapping_add(1);
 
     println!("ephe: session reset");
     println!("ephe: new desktop: {}", new_desktop_url);
     println!("ephe: new mobile : {}", new_mobile_url);
+    println!("ephe: new pair pin: {}", s.pin);
 
     let body = serde_json::json!({ "url": new_desktop_url }).to_string();
     ([("content-type", "application/json")], body).into_response()
@@ -216,12 +392,87 @@ struct WsQuery {
     token: Option<String>,
 }
 
+fn is_valid_ws_origin(origin_hdr: Option<&str>, lan_ip: &str, port: u16) -> bool {
+    let Some(origin) = origin_hdr else {
+        return true;
+    };
+    let lower = origin.trim().to_ascii_lowercase();
+    let (scheme, rest) = if let Some(r) = lower.strip_prefix("http://") {
+        ("http", r)
+    } else if let Some(r) = lower.strip_prefix("https://") {
+        ("https", r)
+    } else {
+        return false;
+    };
+
+    if rest.is_empty()
+        || rest.contains('/')
+        || rest.contains('?')
+        || rest.contains('#')
+        || rest.contains('@')
+    {
+        return false;
+    }
+
+    let (host, origin_port) = if rest.starts_with('[') {
+        let Some(end_bracket) = rest.find(']') else {
+            return false;
+        };
+        let host = &rest[..=end_bracket];
+        let after = &rest[end_bracket + 1..];
+        if after.is_empty() {
+            (host, None)
+        } else if let Some(p_str) = after.strip_prefix(':') {
+            let Ok(p) = p_str.parse::<u16>() else {
+                return false;
+            };
+            (host, Some(p))
+        } else {
+            return false;
+        }
+    } else if let Some((h, p_str)) = rest.split_once(':') {
+        let Ok(p) = p_str.parse::<u16>() else {
+            return false;
+        };
+        (h, Some(p))
+    } else {
+        (rest, None)
+    };
+
+    let effective_port = origin_port.unwrap_or(if scheme == "https" { 443 } else { 80 });
+    if effective_port != port {
+        return false;
+    }
+
+    let lan_lower = lan_ip.to_ascii_lowercase();
+    let is_private_v4 = host
+        .parse::<std::net::Ipv4Addr>()
+        .is_ok_and(|ip| ip.is_private());
+    host == "localhost"
+        || host == "127.0.0.1"
+        || host == "[::1]"
+        || host == lan_lower
+        || host == format!("[{lan_lower}]")
+        || is_private_v4
+}
+
 async fn ws(
     Query(q): Query<WsQuery>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
 ) -> Response {
+    // Validate Origin header to protect against Cross-Site WebSocket Hijacking (CSWSH)
+    let origin_val = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok());
+    if !is_valid_ws_origin(origin_val, &state.lan_ip, state.port) {
+        eprintln!(
+            "ephe: rejected ws connection from untrusted origin: {:?}",
+            origin_val
+        );
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
     let is_loopback = addr.ip().is_loopback();
     let token = q.token.unwrap_or_default();
     ws.max_frame_size(MAX_TEXT_LEN + 4096)
@@ -231,14 +482,18 @@ async fn ws(
 
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: bool, token: String) {
     let role: &'static str = if is_loopback { "desktop" } else { "mobile" };
-    let (tx, mut rx) = mpsc::unbounded_channel::<ServerMsg>();
+    let (tx, mut rx) = mpsc::channel::<ServerMsg>(128);
     let (mut sink, mut stream) = socket.split();
 
     // accept into session
-    let (accepted, locked) = {
+    let (accepted, locked, files) = {
         let mut s = state.session.lock().await;
         match accept_into_session(&mut s, role, &token, tx.clone()) {
-            Ok(()) => (s.text.clone(), s.locked),
+            Ok(()) => (
+                s.text.clone(),
+                s.locked,
+                s.files.iter().map(|f| f.meta.clone()).collect::<Vec<_>>(),
+            ),
             Err(reason) => {
                 let _ = sink
                     .send(Message::Text(
@@ -251,33 +506,27 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: boo
         }
     };
 
-    let _ = tx.send(ServerMsg::Init {
+    let _ = tx.try_send(ServerMsg::Init {
         text: accepted,
         locked,
+        files,
     });
     publish_manifest(&state).await;
-    // ponytail: include the joiner so a second phone immediately shows as
-    // connected (and gets the join toast) instead of staying "waiting".
     broadcast(&state, ServerMsg::PeerJoined, role, None).await;
-    // the desktop needs the fresh device list (ids + labels) right after a join
+
+    // desktop needs the fresh device list right after a join
     {
         let s = state.session.lock().await;
         if let Some(d) = s.desktop.as_ref() {
-            let _ = d.tx.send(ServerMsg::Devices {
+            let _ = d.tx.try_send(ServerMsg::Devices {
                 devices: device_list(&s),
             });
         }
     }
 
-    // Heartbeat: ping every `heartbeat_secs`; browsers auto-pong at the
-    // protocol level (even in background tabs). A peer that stops answering
-    // (app force-killed, Wi-Fi dropped, airplane mode) gets no pong, so its
-    // liveness deadline passes and we drop it — otherwise the session would
-    // linger with a phantom peer forever.
     let period = Duration::from_secs(state.heartbeat_secs);
     let mut heartbeat = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    // absolute deadline, refreshed only when a frame actually arrives
     let mut deadline = tokio::time::Instant::now() + period * 3;
 
     let mut should_close = false;
@@ -314,9 +563,6 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: boo
                                     }
                                     {
                                         let mut s = state.session.lock().await;
-                                        // ponytail: enforce lock server-side — frontend lock is
-                                        // cosmetic, the backend is the authority. Only the desktop
-                                        // can write when the pad is locked.
                                         if s.locked && role != "desktop" {
                                             continue;
                                         }
@@ -329,7 +575,6 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: boo
                                     broadcast(&state, ServerMsg::Typing, role, Some(&tx)).await;
                                 }
                                 ClientMsg::Lock { locked } => {
-                                    // ponytail: single-writer is desktop-only; phones can't lock
                                     if role == "desktop" {
                                         {
                                             let mut s = state.session.lock().await;
@@ -340,8 +585,6 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: boo
                                     }
                                 }
                                 ClientMsg::Ack => {
-                                    // a phone received someone's text; relay the
-                                    // read receipt to everyone but the acker
                                     if role == "mobile" {
                                         let label = {
                                             let s = state.session.lock().await;
@@ -357,32 +600,37 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, is_loopback: boo
                                     }
                                 }
                                 ClientMsg::Kick { id } => {
-                                    // desktop-only: remove the phone, it gets
-                                    // "kicked" and closes; its disconnect wipes
-                                    // the session and peer_lefts everyone (ephemeral)
                                     if role == "desktop" {
                                         let mut s = state.session.lock().await;
                                         if let Some(pos) = s.mobiles.iter().position(|m| m.id == id) {
                                             let kicked = s.mobiles.remove(pos);
-                                            let _ = kicked.tx.send(ServerMsg::Kicked);
-                                            s.text.clear();
+                                            let _ = kicked.tx.try_send(ServerMsg::Kicked);
                                             let mut others = Vec::new();
                                             if let Some(d) = s.desktop.as_ref() {
                                                 others.push(d.tx.clone());
                                             }
                                             others.extend(s.mobiles.iter().map(|m| m.tx.clone()));
                                             for t in others {
-                                                let _ = t.send(ServerMsg::PeerLeft);
+                                                let _ = t.try_send(ServerMsg::PeerLeft);
                                             }
                                         }
                                     }
+                                }
+                                ClientMsg::DeleteFile { id } => {
+                                    {
+                                        let mut s = state.session.lock().await;
+                                        s.files.retain(|f| f.meta.id != id);
+                                    }
+                                    broadcast(&state, ServerMsg::FileRemoved { id }, "server", None).await;
+                                }
+                                ClientMsg::Ping { ts } => {
+                                    let _ = tx.try_send(ServerMsg::Pong { ts });
                                 }
                             }
                         }
                         deadline = tokio::time::Instant::now() + period * 3;
                     }
                     Some(Ok(_)) => {
-                        // pongs (and anything else) prove the peer is alive
                         deadline = tokio::time::Instant::now() + period * 3;
                     }
                     Some(Err(_)) | None => break,
@@ -405,22 +653,22 @@ fn accept_into_session(
     s: &mut crate::session::Session,
     role: &str,
     token: &str,
-    tx: mpsc::UnboundedSender<ServerMsg>,
+    tx: mpsc::Sender<ServerMsg>,
 ) -> Result<(), &'static str> {
     if role == "desktop" {
-        if s.desktop.is_some() {
-            return Err("desktop already connected");
-        }
+        // Desktop can reconnect cleanly on reload or tab recovery
         s.desktop = Some(Client {
             id: random_id(),
             tx,
         });
+        s.disconnect_gen = s.disconnect_gen.wrapping_add(1);
     } else {
         if !is_valid_token(s, token) {
             return Err("invalid token");
         }
         s.mobiles.retain(|m| !m.tx.is_closed());
         if s.mobiles.len() >= MAX_MOBILES {
+            // Evict oldest closed or stale mobile connection if present
             return Err("session full: max 2 mobiles");
         }
         s.disconnect_gen = s.disconnect_gen.wrapping_add(1);
@@ -443,20 +691,49 @@ fn device_list(s: &crate::session::Session) -> Vec<DeviceInfo> {
         .collect()
 }
 
-async fn on_disconnect(state: Arc<AppState>, role: &str, me: &mpsc::UnboundedSender<ServerMsg>) {
+fn grace_period_secs(heartbeat_secs: u64, default_secs: u64) -> u64 {
+    if heartbeat_secs <= 1 {
+        2
+    } else {
+        std::env::var("EPHE_GRACE_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(default_secs)
+    }
+}
+
+async fn on_disconnect(state: Arc<AppState>, role: &str, me: &mpsc::Sender<ServerMsg>) {
     if role == "desktop" {
-        let others = {
+        let gen = {
             let mut s = state.session.lock().await;
             s.desktop = None;
-            s.text.clear();
-            let mut txs = Vec::new();
-            txs.extend(s.mobiles.iter().map(|m| m.tx.clone()));
-            txs
+            s.disconnect_gen = s.disconnect_gen.wrapping_add(1);
+            s.disconnect_gen
         };
-        for t in others {
-            let _ = t.send(ServerMsg::PeerLeft);
-        }
-        publish_manifest(&state).await;
+
+        // Desktop reload grace period: don't wipe data immediately!
+        // Allow desktop 180 seconds (3 minutes) by default to reconnect on page reload or tab switch.
+        let grace_secs = grace_period_secs(state.heartbeat_secs, 180);
+        let state_clone = Arc::clone(&state);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(grace_secs)).await;
+            let others = {
+                let mut s = state_clone.session.lock().await;
+                if s.disconnect_gen == gen && s.desktop.is_none() {
+                    s.text.clear();
+                    s.files.clear();
+                    let mut txs = Vec::new();
+                    txs.extend(s.mobiles.iter().map(|m| m.tx.clone()));
+                    txs
+                } else {
+                    Vec::new()
+                }
+            };
+            for t in others {
+                let _ = t.try_send(ServerMsg::PeerLeft);
+            }
+            publish_manifest(&state_clone).await;
+        });
         return;
     }
 
@@ -474,45 +751,37 @@ async fn on_disconnect(state: Arc<AppState>, role: &str, me: &mpsc::UnboundedSen
         let mut s = state.session.lock().await;
         if s.mobiles.is_empty() {
             s.text.clear();
+            s.files.clear();
         }
         return;
     }
 
-    // Desktop is alive! Update desktop's device list so it reflects the change.
+    // Desktop is alive! Update desktop's device list
     {
         let s = state.session.lock().await;
         if let Some(d) = s.desktop.as_ref() {
-            let _ = d.tx.send(ServerMsg::Devices {
+            let _ = d.tx.try_send(ServerMsg::Devices {
                 devices: device_list(&s),
             });
         }
     }
 
-    // If another phone is still connected, session continues without teardown.
     if remaining_mobiles > 0 {
         return;
     }
 
-    // All phones disconnected, but desktop is still connected.
-    // Give mobile a grace period to reconnect (e.g. user minimized browser to switch apps).
-    let grace_secs: u64 = if state.heartbeat_secs <= 1 {
-        // Fast test mode: within test timeout (keepalive test expects peer_left within 8s)
-        2
-    } else {
-        std::env::var("EPHE_GRACE_SECS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(45)
-    };
+    // All phones disconnected, desktop still active.
+    // Give mobile a grace period (e.g. 60s) to reconnect without clearing desktop's text.
+    let grace_secs = grace_period_secs(state.heartbeat_secs, 60);
 
     let state_clone = Arc::clone(&state);
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(grace_secs)).await;
         let others = {
-            let mut s = state_clone.session.lock().await;
+            let s = state_clone.session.lock().await;
             if s.disconnect_gen == gen && s.mobiles.is_empty() {
-                // Grace period expired without any mobile reconnecting
-                s.text.clear();
+                // Notice: Keep desktop text intact! Do not destroy desktop work simply
+                // because mobile disconnected. Just notify desktop of mobile leaving.
                 let mut txs = Vec::new();
                 if let Some(d) = s.desktop.as_ref() {
                     txs.push(d.tx.clone());
@@ -523,13 +792,12 @@ async fn on_disconnect(state: Arc<AppState>, role: &str, me: &mpsc::UnboundedSen
             }
         };
         for t in others {
-            let _ = t.send(ServerMsg::PeerLeft);
+            let _ = t.try_send(ServerMsg::PeerLeft);
         }
         publish_manifest(&state_clone).await;
     });
 }
 
-/// Refresh the PortPeek manifest after any join/leave (device count changed).
 async fn publish_manifest(state: &AppState) {
     let (id, connected) = {
         let s = state.session.lock().await;
@@ -538,12 +806,11 @@ async fn publish_manifest(state: &AppState) {
     manifest::publish(&id, state.port, connected);
 }
 
-/// Send `msg` to every peer except `exclude` (the sender).
 async fn broadcast(
     state: &AppState,
     msg: ServerMsg,
     from_role: &str,
-    exclude: Option<&mpsc::UnboundedSender<ServerMsg>>,
+    exclude: Option<&mpsc::Sender<ServerMsg>>,
 ) {
     let targets = {
         let s = state.session.lock().await;
@@ -563,6 +830,89 @@ async fn broadcast(
         txs
     };
     for t in targets {
-        let _ = t.send(msg.clone());
+        let _ = t.try_send(msg.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn origin_validation_is_strict() {
+        let lan = "192.168.1.42";
+        let port = 54321;
+        assert!(is_valid_ws_origin(None, lan, port));
+        assert!(is_valid_ws_origin(
+            Some("http://localhost:54321"),
+            lan,
+            port
+        ));
+        assert!(is_valid_ws_origin(
+            Some("https://localhost:54321"),
+            lan,
+            port
+        ));
+        assert!(is_valid_ws_origin(
+            Some("http://127.0.0.1:54321"),
+            lan,
+            port
+        ));
+        assert!(is_valid_ws_origin(Some("http://[::1]:54321"), lan, port));
+        assert!(is_valid_ws_origin(
+            Some("http://192.168.1.42:54321"),
+            lan,
+            port
+        ));
+
+        // Reject evil subdomains, mismatched ports, paths, userinfo, non-http schemes
+        assert!(!is_valid_ws_origin(
+            Some("http://localhost.evil.com:54321"),
+            lan,
+            port
+        ));
+        assert!(!is_valid_ws_origin(
+            Some("http://localhost:9999"),
+            lan,
+            port
+        ));
+        assert!(!is_valid_ws_origin(Some("http://localhost"), lan, port));
+        assert!(!is_valid_ws_origin(
+            Some("http://192.168.1.42:8080"),
+            lan,
+            port
+        ));
+        assert!(!is_valid_ws_origin(
+            Some("http://localhost:54321/evil"),
+            lan,
+            port
+        ));
+        assert!(!is_valid_ws_origin(
+            Some("http://evil@localhost:54321"),
+            lan,
+            port
+        ));
+        assert!(!is_valid_ws_origin(
+            Some("file://localhost:54321"),
+            lan,
+            port
+        ));
+    }
+
+    #[test]
+    fn filename_sanitization_and_blocked_extensions() {
+        assert_eq!(sanitize_filename("hello%20world.txt"), "hello world.txt");
+        assert_eq!(sanitize_filename("..%2F..%2Fetc%2Fpasswd"), "passwd");
+        assert_eq!(sanitize_filename(r"C:\Users\me\secret.pdf"), "secret.pdf");
+        assert_eq!(sanitize_filename("bad\"name\x00.txt"), "badname.txt");
+        assert_eq!(sanitize_filename(".."), "file");
+        assert_eq!(sanitize_filename(""), "file");
+
+        assert!(is_blocked_extension("payload.exe"));
+        assert!(is_blocked_extension("SCRIPT.PS1"));
+        assert!(is_blocked_extension("run.bat"));
+        assert!(is_blocked_extension("app.jar"));
+        assert!(!is_blocked_extension("photo.png"));
+        assert!(!is_blocked_extension("archive.zip"));
     }
 }

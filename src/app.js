@@ -15,6 +15,34 @@ const editor = document.getElementById("editor");
 const footerHint = document.getElementById("footer-hint");
 const footerCount = document.getElementById("footer-count");
 const collapseBtn = document.getElementById("collapse-btn");
+const footerActions = document.getElementById("footer-actions");
+const toolsBtn = document.getElementById("tools-btn");
+const ctxBadge = document.getElementById("ctx-badge");
+
+function haptic(ms = 15) {
+  if (!isDesktop && navigator.vibrate) {
+    try { navigator.vibrate(ms); } catch {}
+  }
+}
+
+if (toolsBtn && footerActions) {
+  toolsBtn.addEventListener("click", () => {
+    const expanded = footerActions.classList.toggle("expanded");
+    toolsBtn.setAttribute("aria-expanded", String(expanded));
+  });
+}
+
+const hasWebCrypto = !!(window.isSecureContext && window.crypto && window.crypto.subtle);
+const ctxHint = hasWebCrypto
+  ? "Secure context: WebCrypto available"
+  : "Plain HTTP LAN mode: WebCrypto (crypto.subtle) requires HTTPS or localhost";
+if (ctxBadge) {
+  ctxBadge.textContent = hasWebCrypto ? "secure" : "lan http";
+  ctxBadge.title = ctxHint;
+}
+if (statusEl) {
+  statusEl.title = ctxHint;
+}
 
 // ---------- transient hint pill over the editor ----------
 
@@ -169,7 +197,10 @@ async function copyValue(text, okLabel) {
     ok = document.execCommand("copy");
     ta.remove();
   }
-  if (ok) toast(okLabel);
+  if (ok) {
+    haptic(15);
+    toast(okLabel);
+  }
 }
 
 function insertAtCursor(text) {
@@ -372,12 +403,32 @@ const urlRow = document.getElementById("url-row");
 const urlText = document.getElementById("url-text");
 
 if (isDesktop && urlRow) {
-  fetch("/url")
+  fetch("/url?token=" + encodeURIComponent(token))
     .then((r) => (r.ok ? r.json() : null))
     .then((data) => {
       if (!data || !data.url) return;
       urlText.value = data.url;
       urlRow.hidden = false;
+      const pinCodeEl = document.getElementById("pin-code");
+      if (pinCodeEl && data.pin) pinCodeEl.textContent = data.pin;
+      const ifaceSelect = document.getElementById("iface-select");
+      const qrImg = document.getElementById("qr");
+      if (ifaceSelect && Array.isArray(data.candidates) && data.candidates.length > 1) {
+        ifaceSelect.innerHTML = "";
+        for (const c of data.candidates) {
+          const opt = document.createElement("option");
+          opt.value = c.ip;
+          opt.textContent = c.name + " (" + c.ip + ")";
+          if (c.ip === data.ip) opt.selected = true;
+          ifaceSelect.appendChild(opt);
+        }
+        ifaceSelect.hidden = false;
+        ifaceSelect.addEventListener("change", () => {
+          const nextIp = ifaceSelect.value;
+          urlText.value = "http://" + nextIp + ":" + data.port + "/";
+          if (qrImg) qrImg.src = "/qr?ip=" + encodeURIComponent(nextIp);
+        });
+      }
     })
     .catch(() => {});
   urlText.addEventListener("focus", () => urlText.select());
@@ -503,9 +554,23 @@ function phoneLabel(n) {
   return "connected · " + n + (n === 1 ? " phone" : " phones");
 }
 
+let lastRtt = null;
+let baseStatusLabel = "waiting";
+
+function renderStatusLabel() {
+  if (!statusLabel) return;
+  if (statusEl.dataset.state === "connected" && lastRtt !== null) {
+    statusLabel.textContent = baseStatusLabel + " · " + lastRtt + "ms";
+  } else {
+    statusLabel.textContent = baseStatusLabel;
+  }
+}
+
 function setStatus(state, label) {
   statusEl.dataset.state = state;
-  statusLabel.textContent = label;
+  baseStatusLabel = label;
+  if (state !== "connected") lastRtt = null;
+  renderStatusLabel();
   if (captionEl) captionEl.textContent = captions[state] || "";
   document.body.classList.toggle("session-ended", state === "error" || state === "lost");
 }
@@ -542,14 +607,25 @@ const wsUrl = `${wsProto}//${location.host}/ws?token=${encodeURIComponent(token)
 let ws = null;
 let retryCount = 0;
 let everJoined = false;
+let pingTimer = null;
 
 function connect() {
+  if (!token && !isDesktop) {
+    showPinModal();
+    return;
+  }
   const sock = new WebSocket(wsUrl);
   ws = sock;
   sock.addEventListener("open", () => {
     retryCount = 0;
     document.body.classList.remove("loading", "session-ended");
     setStatus("idle", "waiting");
+    clearInterval(pingTimer);
+    pingTimer = setInterval(() => {
+      if (ws === sock && sock.readyState === 1) {
+        sock.send(JSON.stringify({ type: "ping", ts: Date.now() }));
+      }
+    }, 5000);
     if (everJoined) {
       everJoined = false;
       toast("reconnected", "info");
@@ -568,6 +644,8 @@ function onDrop(sock) {
   if (statusEl.dataset.state === "error") return;
   if (ws !== sock || sock._dropped) return; // superseded or already handled
   sock._dropped = true;
+  clearInterval(pingTimer);
+  pingTimer = null;
 
   // If the browser is currently hidden/minimized, pause reconnection retries
   // until the page becomes visible again. Mobile OS blocks/throttles background sockets.
@@ -613,6 +691,7 @@ window.addEventListener("focus", checkConnectionOnResume);
 
 let applying = false;
 let lastSent = "";
+let lastAckedText = "";
 let lastTypingSent = 0;
 let peerCount = 0;
 let joinedSelf = false;
@@ -706,7 +785,10 @@ function applyTextBroadcast(text, okLabel) {
   applying = true;
   editor.value = text;
   editor.setSelectionRange(text.length, text.length);
+  clearTimeout(sendTimer);
+  sendTimer = null;
   lastSent = text;
+  lastAckedText = text;
   applying = false;
   updateCounter();
   seenRoundTrip.clear();
@@ -896,94 +978,6 @@ if (shortcutsPanel) {
 }
 document.getElementById("shortcuts-close").addEventListener("click", hideShortcuts);
 
-// ---------- in-app qr camera scanner (mobile / PWA) ----------
-
-let scanStream = null;
-let scanTimer = null;
-const scanPanel = document.getElementById("scan-panel");
-const scanVideo = document.getElementById("scan-video");
-const scanClose = document.getElementById("scan-close");
-const scanBtn = document.getElementById("scan-btn");
-
-async function startScan() {
-  openModal(scanPanel, "#scan-close");
-  const scanHint = document.getElementById("scan-hint");
-  if (scanHint) scanHint.textContent = "point camera at the desktop QR code";
-  try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      toast("camera not supported", "error");
-      return;
-    }
-    scanStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" },
-    });
-    if (scanVideo) {
-      scanVideo.srcObject = scanStream;
-      scanVideo.play();
-    }
-    if ("BarcodeDetector" in window) {
-      const detector = new BarcodeDetector({ formats: ["qr_code"] });
-      scanTimer = setInterval(async () => {
-        if (!scanVideo || scanVideo.readyState < 2) return;
-        try {
-          const codes = await detector.detect(scanVideo);
-          if (codes && codes.length > 0) {
-            handleScannedUrl(codes[0].rawValue);
-          }
-        } catch {}
-      }, 250);
-    } else {
-      if (scanHint) scanHint.textContent = "scanning...";
-    }
-  } catch (err) {
-    toast("camera permission denied", "error");
-    hideScan();
-  }
-}
-
-function handleScannedUrl(raw) {
-  stopScan();
-  hideScan();
-  try {
-    const url = new URL(raw, location.href);
-    const scannedToken = url.searchParams.get("token");
-    if (scannedToken) {
-      toast("connecting...", "info");
-      location.href = url.href;
-      return;
-    }
-  } catch {}
-  toast("invalid ephe QR code", "error");
-}
-
-function stopScan() {
-  if (scanTimer) {
-    clearInterval(scanTimer);
-    scanTimer = null;
-  }
-  if (scanStream) {
-    scanStream.getTracks().forEach((track) => track.stop());
-    scanStream = null;
-  }
-  if (scanVideo) {
-    scanVideo.srcObject = null;
-  }
-}
-
-function hideScan() {
-  stopScan();
-  closeModal(scanPanel);
-}
-
-if (scanBtn) scanBtn.addEventListener("click", startScan);
-if (scanClose) scanClose.addEventListener("click", hideScan);
-if (scanPanel) {
-  scanPanel.addEventListener("click", (e) => {
-    if (e.target === scanPanel) hideScan();
-  });
-  scanPanel.addEventListener("keydown", (e) => trapFocus(e, scanPanel));
-}
-
 // ponytail: modals must close on Escape for keyboard accessibility
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
@@ -991,9 +985,90 @@ document.addEventListener("keydown", (e) => {
     hideTransform();
     hideHistory();
     hidePaste();
-    hideScan();
   }
 });
+
+function diffRange(base, target) {
+  let start = 0;
+  const minLen = Math.min(base.length, target.length);
+  while (start < minLen && base[start] === target[start]) start++;
+  let suffix = 0;
+  const maxS = Math.min(base.length - start, target.length - start);
+  while (
+    suffix < maxS &&
+    base[base.length - 1 - suffix] === target[target.length - 1 - suffix]
+  ) {
+    suffix++;
+  }
+  return {
+    start,
+    end: base.length - suffix,
+    insert: target.slice(start, target.length - suffix),
+  };
+}
+
+function mergeThreeWay(base, local, remote, cursorStart, cursorEnd) {
+  if (remote === base) return { text: local, start: cursorStart, end: cursorEnd };
+  if (local === base) {
+    const len = remote.length;
+    return { text: remote, start: Math.min(cursorStart, len), end: Math.min(cursorEnd, len) };
+  }
+  if (local === remote) return { text: local, start: cursorStart, end: cursorEnd };
+
+  const r = diffRange(base, remote);
+  const l = diffRange(base, local);
+
+  // Disjoint edit: remote edit is strictly before local edit
+  if (r.end <= l.start) {
+    const rDelta = r.insert.length - (r.end - r.start);
+    const text =
+      remote.slice(0, r.start + r.insert.length) +
+      base.slice(r.end, l.start) +
+      l.insert +
+      base.slice(l.end);
+    const shift = (pos) => (pos >= r.end ? Math.max(0, pos + rDelta) : pos);
+    return { text, start: shift(cursorStart), end: shift(cursorEnd) };
+  }
+
+  // Disjoint edit: local edit is strictly before remote edit
+  if (l.end <= r.start) {
+    const lDelta = l.insert.length - (l.end - l.start);
+    const rDelta = r.insert.length - (r.end - r.start);
+    const text =
+      local.slice(0, l.start + l.insert.length) +
+      base.slice(l.end, r.start) +
+      r.insert +
+      base.slice(r.end);
+    const rStartInLocal = r.start + lDelta;
+    const shift = (pos) => (pos >= rStartInLocal ? Math.max(0, pos + rDelta) : pos);
+    return { text, start: shift(cursorStart), end: shift(cursorEnd) };
+  }
+
+  // Overlapping edits: 3-way common prefix/suffix merge
+  let p = 0;
+  const minLen = Math.min(base.length, local.length, remote.length);
+  while (p < minLen && base[p] === local[p] && base[p] === remote[p]) p++;
+  let s = 0;
+  const maxS = Math.min(base.length - p, local.length - p, remote.length - p);
+  while (
+    s < maxS &&
+    base[base.length - 1 - s] === local[local.length - 1 - s] &&
+    base[base.length - 1 - s] === remote[remote.length - 1 - s]
+  ) {
+    s++;
+  }
+  const prefix = base.slice(0, p);
+  const suffix = s > 0 ? base.slice(base.length - s) : "";
+  const localMid = local.slice(p, local.length - s);
+  const remoteMid = remote.slice(p, remote.length - s);
+  const text = prefix + remoteMid + localMid + suffix;
+  const shift = (pos) => {
+    if (pos <= p) return pos;
+    if (pos <= local.length - s) return pos + remoteMid.length;
+    return pos + (text.length - local.length);
+  };
+  return { text, start: shift(cursorStart), end: shift(cursorEnd) };
+}
 
 function onMessage(ev) {
   let msg;
@@ -1002,9 +1077,12 @@ function onMessage(ev) {
     case "init":
       everJoined = true;
       joinedSelf = false;
+      clearTimeout(sendTimer);
+      sendTimer = null;
       applying = true;
       editor.value = msg.text || "";
       lastSent = editor.value;
+      lastAckedText = editor.value;
       padLocked = !!msg.locked;
       applyLock();
       applying = false;
@@ -1013,39 +1091,82 @@ function onMessage(ev) {
       undoStack = [];
       redoStack = [];
       updateUndoRedo();
+      if (Array.isArray(msg.files)) {
+        if (filesChips) filesChips.innerHTML = "";
+        msg.files.forEach(renderFileChip);
+      }
       if (isDesktop) {
         editor.focus({ preventScroll: true });
       } else {
         peerCount = 1;
         setStatus("connected", "connected");
+        haptic(15);
+      }
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "ping", ts: Date.now() }));
       }
       break;
-    case "text":
-      if (msg.text === lastSent) break;
-      commitHistory(editor.value);
-      // ponytail: keep the caret where it was (reading a scrolled-up spot)
-      // unless it sat near the old end — only then jump to the new end.
-      const prevLen = editor.value.length;
-      const prevStart = editor.selectionStart;
-      const wasNearEnd = prevStart >= prevLen - 8;
-      applying = true;
-      editor.value = msg.text || "";
-      const len = editor.value.length;
-      if (wasNearEnd) {
-        editor.setSelectionRange(len, len);
-        hideHint();
+    case "text": {
+      const incoming = msg.text || "";
+      if (sendTimer !== null) {
+        commitHistory(editor.value);
+        const merged = mergeThreeWay(
+          lastAckedText,
+          editor.value,
+          incoming,
+          editor.selectionStart,
+          editor.selectionEnd
+        );
+        lastAckedText = incoming;
+        applying = true;
+        editor.value = merged.text;
+        editor.setSelectionRange(merged.start, merged.end);
+        lastSent = editor.value;
+        applying = false;
+        if (editor.value === incoming) {
+          clearTimeout(sendTimer);
+          sendTimer = null;
+        }
+        updateCounter();
+        captureHistory();
       } else {
-        const pos = Math.min(prevStart, len);
-        editor.setSelectionRange(pos, pos);
-        if (len > prevLen) showHint("new text below \u2193");
+        if (incoming === lastSent) {
+          lastAckedText = incoming;
+          break;
+        }
+        commitHistory(editor.value);
+        // ponytail: keep the caret where it was (reading a scrolled-up spot)
+        // unless it sat near the old end — only then jump to the new end.
+        const prevLen = editor.value.length;
+        const prevStart = editor.selectionStart;
+        const wasNearEnd = prevStart >= prevLen - 8;
+        applying = true;
+        editor.value = incoming;
+        const len = editor.value.length;
+        if (wasNearEnd) {
+          editor.setSelectionRange(len, len);
+          hideHint();
+        } else {
+          const pos = Math.min(prevStart, len);
+          editor.setSelectionRange(pos, pos);
+          if (len > prevLen) showHint("new text below \u2193");
+        }
+        lastSent = editor.value;
+        lastAckedText = editor.value;
+        applying = false;
+        updateCounter();
+        captureHistory();
       }
-      lastSent = editor.value;
-      applying = false;
-      updateCounter();
-      captureHistory();
       // read receipt: I got this text — tell the peers (phones only)
       if (!isDesktop && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: "ack" }));
+      }
+      break;
+    }
+    case "pong":
+      if (typeof msg.ts === "number") {
+        lastRtt = Math.max(0, Date.now() - msg.ts);
+        renderStatusLabel();
       }
       break;
     case "typing":
@@ -1088,6 +1209,18 @@ function onMessage(ev) {
       seenRoundTrip.add(msg.label);
       showHint("seen on " + [...seenRoundTrip].join(" & "));
       break;
+    case "file_available":
+      if (msg.file) {
+        renderFileChip(msg.file);
+        haptic(15);
+        toast("new file: " + msg.file.name, "info");
+      }
+      break;
+    case "file_removed":
+      if (msg.id) {
+        removeFileChip(msg.id);
+      }
+      break;
     case "kicked":
       // the desktop removed this phone from the session; terminal, no reconnect
       editor.readOnly = true;
@@ -1129,8 +1262,10 @@ editor.addEventListener("input", () => {
   // ponytail: tiny debounce so a fast typist doesn't send a packet per keystroke
   clearTimeout(sendTimer);
   sendTimer = setTimeout(() => {
+    sendTimer = null;
     if (ws.readyState === 1) {
       ws.send(JSON.stringify({ type: "text", text: editor.value }));
+      lastAckedText = editor.value;
     }
   }, 16);
   captureHistory();
@@ -1140,4 +1275,192 @@ editor.addEventListener("input", () => {
 // Previous code forced scrollTop = scrollHeight which jumped the viewport
 // to the bottom even when the user tapped mid-document.
 
-connect();
+
+
+// ---------- In-Memory File Transfer ----------
+
+const attachBtn = document.getElementById("attach-btn");
+const fileInput = document.getElementById("file-input");
+const filesBar = document.getElementById("files-bar");
+const filesChips = document.getElementById("files-chips");
+const editorWrap = document.getElementById("editor-wrap");
+const dropOverlay = document.getElementById("drop-overlay");
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function renderFileChip(file) {
+  if (!filesChips) return;
+  if (document.getElementById("file-" + file.id)) return;
+
+  const chip = document.createElement("div");
+  chip.id = "file-" + file.id;
+  chip.className = "file-chip";
+
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "file-chip-name";
+  nameSpan.textContent = file.name;
+  nameSpan.title = file.name;
+
+  const sizeSpan = document.createElement("span");
+  sizeSpan.className = "file-chip-size";
+  sizeSpan.textContent = formatFileSize(file.size);
+
+  const dlLink = document.createElement("a");
+  dlLink.href = "/file/" + encodeURIComponent(file.id) + "?token=" + encodeURIComponent(token);
+  dlLink.textContent = "download";
+  dlLink.download = file.name;
+  dlLink.className = "file-chip-dl btn btn-sm";
+  dlLink.style.padding = "2px 8px";
+  dlLink.style.fontSize = "11px";
+
+  const delBtn = document.createElement("button");
+  delBtn.type = "button";
+  delBtn.className = "file-chip-del";
+  delBtn.textContent = "✕";
+  delBtn.title = "delete file from memory";
+  delBtn.addEventListener("click", () => {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "delete_file", id: file.id }));
+    }
+  });
+
+  chip.appendChild(nameSpan);
+  chip.appendChild(sizeSpan);
+  chip.appendChild(dlLink);
+  chip.appendChild(delBtn);
+  filesChips.appendChild(chip);
+
+  if (filesBar) filesBar.hidden = false;
+}
+
+function removeFileChip(id) {
+  const chip = document.getElementById("file-" + id);
+  if (chip) chip.remove();
+  if (filesChips && !filesChips.children.length && filesBar) {
+    filesBar.hidden = true;
+  }
+}
+
+async function uploadFile(file) {
+  if (!file) return;
+  const MAX_SIZE = 25 * 1024 * 1024;
+  if (file.size > MAX_SIZE) {
+    toast("file exceeds 25 MB limit", "error");
+    return;
+  }
+  toast("uploading " + file.name + "...", "info");
+  try {
+    const res = await fetch("/upload?token=" + encodeURIComponent(token), {
+      method: "POST",
+      headers: {
+        "x-filename": encodeURIComponent(file.name),
+        "content-type": file.type || "application/octet-stream",
+      },
+      body: file,
+    });
+    if (!res.ok) {
+      let errMsg = "upload failed";
+      try {
+        const text = (await res.text()).trim();
+        if (text) errMsg = text;
+      } catch {}
+      throw new Error(errMsg);
+    }
+    toast(file.name + " sent!", "success");
+  } catch (err) {
+    toast(err && err.message ? err.message : "upload failed", "error");
+  }
+}
+
+if (attachBtn && fileInput) {
+  attachBtn.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files && fileInput.files[0]) {
+      uploadFile(fileInput.files[0]);
+      fileInput.value = "";
+    }
+  });
+}
+
+if (editorWrap && dropOverlay) {
+  editorWrap.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    dropOverlay.hidden = false;
+  });
+  dropOverlay.addEventListener("dragleave", (e) => {
+    e.preventDefault();
+    dropOverlay.hidden = true;
+  });
+  dropOverlay.addEventListener("drop", (e) => {
+    e.preventDefault();
+    dropOverlay.hidden = true;
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+      uploadFile(e.dataTransfer.files[0]);
+    }
+  });
+}
+
+// ---------- PIN Pairing Modal ----------
+
+function showPinModal() {
+  const pinPanel = document.getElementById("pin-panel");
+  const pinInput = document.getElementById("pin-input");
+  const pinSubmit = document.getElementById("pin-submit");
+  if (!pinPanel) return;
+  document.body.classList.remove("loading", "session-ended");
+  if (!pinPanel.hidden) return;
+  openModal(pinPanel, "#pin-input");
+  setStatus("idle", "enter pin");
+  if (pinPanel.dataset.bound) return;
+  pinPanel.dataset.bound = "1";
+
+  async function tryPin() {
+    const val = (pinInput ? pinInput.value : "").trim();
+    if (val.length !== 4) {
+      toast("enter 4 digits", "error");
+      return;
+    }
+    if (pinSubmit) {
+      pinSubmit.disabled = true;
+      pinSubmit.textContent = "pairing...";
+    }
+    try {
+      const res = await fetch("/pair?pin=" + encodeURIComponent(val));
+      if (!res.ok) throw new Error("invalid pin");
+      const data = await res.json();
+      const nextUrl = new URL(location.href);
+      nextUrl.searchParams.set("token", data.token);
+      location.href = nextUrl.toString();
+    } catch {
+      toast("invalid PIN", "error");
+      if (pinSubmit) {
+        pinSubmit.disabled = false;
+        pinSubmit.textContent = "connect";
+      }
+      if (pinInput) {
+        pinInput.value = "";
+        pinInput.focus();
+      }
+    }
+  }
+
+  if (pinSubmit) pinSubmit.addEventListener("click", tryPin);
+  if (pinInput) {
+    pinInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") tryPin();
+    });
+    pinInput.addEventListener("input", () => {
+      if (pinInput.value.length === 4) tryPin();
+    });
+  }
+}
+
+if (!token && !isDesktop) {
+  showPinModal();
+} else {
+  connect();
+}

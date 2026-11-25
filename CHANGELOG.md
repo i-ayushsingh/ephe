@@ -11,6 +11,41 @@ Categories:
 
 ---
 
+## v1.15.0
+
+### Features added
+
+- **4-digit numeric pairing PIN (mandatory after QR scan)** — sessions generate a 4-digit pairing PIN (`/pair?pin=...`) shown beneath the desktop QR code and in the CLI output. Both QR codes (`/qr`) and `/url` omit the session token, so mobile browsers must enter the 4-digit PIN to join.
+- **Desktop network interface switcher** — when multiple LAN adapters are present (e.g. Ethernet + Windows Hotspot), the desktop UI displays an interface dropdown to switch the QR code and mobile link IP live.
+- **In-memory file transfer (25 MB limit)** — upload and share files between connected desktop and mobile devices via `/upload` and `/file/:id` or drag-and-drop onto the editor. Files live strictly in RAM (zero disk writes), enforce a 25 MB total session cap, sanitize filenames, and block executable/script types (`.exe`, `.bat`, `.cmd`, `.ps1`, `.scr`, `.vbs`, `.msi`, `.dll`, `.com`, `.pif`, `.hta`, `.cpl`, `.jar`).
+- **Non-clobbering 3-way text sync** — concurrent edits between desktop and mobile are merged via prefix/suffix 3-way diffing instead of blindly overwriting in-flight typing.
+- **Live latency indicator & mobile haptics** — added WebSocket `ping`/`pong` RTT measurement displayed in the connection status badge, plus subtle `navigator.vibrate(15)` haptic feedback on mobile.
+
+### Security & reliability
+
+- **Closed `/url` token leak** — `/url` now requires loopback host access or a valid session token.
+- **CSWSH protection** — `/ws` enforces strict `Origin` header parsing and exact host/port matching against `localhost`, `127.0.0.1`, `[::1]`, or the active LAN IP.
+- **Bounded Tokio channels** — replaced `mpsc::unbounded_channel` with bounded `mpsc::channel(128)` + `try_send` to prevent memory exhaustion from stalled clients.
+- **3-minute desktop reload grace period** — refreshing the desktop browser tab no longer wipes the pad or terminates mobile connections immediately.
+
+### UI/UX changes or overhaul
+
+- **Mobile collapsible tools drawer** — consolidated secondary editor controls into an expandable `#tools-btn` drawer on mobile so the primary footer stays clean and single-row.
+- **File chips & drag-and-drop overlay** — added a shared in-memory files bar with download/delete actions and a drag-and-drop overlay.
+- **Secure context badge** — added `#ctx-badge` (`secure` vs `lan http`) with tooltips explaining WebCrypto availability.
+
+### Error and bug fixes
+
+- **Improved LAN IP & port selection** — disqualified virtual adapters (Hyper-V, WSL, VirtualBox, VMware, Docker) and link-local addresses (`169.254.x.x`), prioritized `192.168.x.x` Wi-Fi/Ethernet interfaces, and bound predictable port `42380` first (with `40000–50000` fallback) for consistent Windows Firewall rules.
+- **Windows PE metadata & conditional windres** — embedded `ProductName`, `FileDescription`, version, and icon into `ephe.exe` and gracefully handled missing resource compilers.
+
+### Other
+
+- Version 1.15.0.
+- Updated repository metadata to `https://github.com/i-ayushsingh/ephe`.
+
+---
+
 ## v0.14.0
 
 ### Features added

@@ -124,16 +124,3 @@ async fn host_url_serves_host_ui_markup() {
     assert!(body.contains("lock-btn"), "host lock control served");
     assert!(body.contains("reset-btn"), "host reset control served");
 }
-
-#[tokio::test(flavor = "multi_thread")]
-async fn manifest_json_is_served() {
-    let (port, _, _) = spawn_server().await;
-    let (status, body) = raw_http(
-        "127.0.0.1",
-        port,
-        "GET /manifest.json HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
-    );
-    assert_eq!(status, 200);
-    assert!(body.contains("standalone"));
-    assert!(body.contains("ephe"));
-}

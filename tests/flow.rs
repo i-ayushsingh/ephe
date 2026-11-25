@@ -29,8 +29,8 @@ fn random_token_is_unique_ish() {
 #[tokio::test]
 async fn desktop_join_then_rejoin_is_rejected() {
     let session = new_session();
-    let (tx1, _rx1) = mpsc::unbounded_channel::<ServerMsg>();
-    let (tx2, _rx2) = mpsc::unbounded_channel::<ServerMsg>();
+    let (tx1, _rx1) = mpsc::channel::<ServerMsg>(128);
+    let (tx2, _rx2) = mpsc::channel::<ServerMsg>(128);
 
     let mut s = session.lock().await;
     assert!(accept(&mut s, "desktop", "", tx1).is_ok());
@@ -42,13 +42,13 @@ async fn desktop_join_then_rejoin_is_rejected() {
 async fn mobile_join_with_wrong_token_is_rejected() {
     let session = new_session();
     let token = session.lock().await.token.clone();
-    let (tx, _rx) = mpsc::unbounded_channel::<ServerMsg>();
+    let (tx, _rx) = mpsc::channel::<ServerMsg>(128);
 
     let mut s = session.lock().await;
     let err = accept(&mut s, "mobile", "wrong", tx).unwrap_err();
     assert_eq!(err, "invalid token");
 
-    let (tx, _rx) = mpsc::unbounded_channel::<ServerMsg>();
+    let (tx, _rx) = mpsc::channel::<ServerMsg>(128);
     assert!(accept(&mut s, "mobile", &token, tx).is_ok());
 }
 
@@ -56,9 +56,9 @@ async fn mobile_join_with_wrong_token_is_rejected() {
 async fn two_mobiles_ok_third_rejected() {
     let session = new_session();
     let token = session.lock().await.token.clone();
-    let (tx1, _rx1) = mpsc::unbounded_channel::<ServerMsg>();
-    let (tx2, _rx2) = mpsc::unbounded_channel::<ServerMsg>();
-    let (tx3, _rx3) = mpsc::unbounded_channel::<ServerMsg>();
+    let (tx1, _rx1) = mpsc::channel::<ServerMsg>(128);
+    let (tx2, _rx2) = mpsc::channel::<ServerMsg>(128);
+    let (tx3, _rx3) = mpsc::channel::<ServerMsg>(128);
 
     let mut s = session.lock().await;
     assert!(accept(&mut s, "mobile", &token, tx1).is_ok());
@@ -71,9 +71,9 @@ async fn two_mobiles_ok_third_rejected() {
 async fn disconnect_wipes_text_and_passes_peer_left_to_others() {
     let session = new_session();
     let token = session.lock().await.token.clone();
-    let (dtx, _drx) = mpsc::unbounded_channel::<ServerMsg>();
-    let (mtx1, mut mrx1) = mpsc::unbounded_channel::<ServerMsg>();
-    let (mtx2, mut mrx2) = mpsc::unbounded_channel::<ServerMsg>();
+    let (dtx, _drx) = mpsc::channel::<ServerMsg>(128);
+    let (mtx1, mut mrx1) = mpsc::channel::<ServerMsg>(128);
+    let (mtx2, mut mrx2) = mpsc::channel::<ServerMsg>(128);
 
     {
         let mut s = session.lock().await;
@@ -92,7 +92,7 @@ async fn disconnect_wipes_text_and_passes_peer_left_to_others() {
         assert!(s.desktop.is_none());
         assert_eq!(s.mobiles.len(), 2);
         for t in others {
-            t.send(ServerMsg::PeerLeft).unwrap();
+            t.try_send(ServerMsg::PeerLeft).unwrap();
         }
     }
     assert!(matches!(mrx1.recv().await.unwrap(), ServerMsg::PeerLeft));
@@ -114,9 +114,9 @@ async fn disconnect_wipes_text_and_passes_peer_left_to_others() {
 async fn reset_rotates_token_and_disconnects_clients() {
     let session = new_session();
     let old_token = session.lock().await.token.clone();
-    let (dtx, mut drx) = mpsc::unbounded_channel::<ServerMsg>();
-    let (mtx1, mut mrx1) = mpsc::unbounded_channel::<ServerMsg>();
-    let (mtx2, mut mrx2) = mpsc::unbounded_channel::<ServerMsg>();
+    let (dtx, mut drx) = mpsc::channel::<ServerMsg>(128);
+    let (mtx1, mut mrx1) = mpsc::channel::<ServerMsg>(128);
+    let (mtx2, mut mrx2) = mpsc::channel::<ServerMsg>(128);
 
     {
         let mut s = session.lock().await;
@@ -141,10 +141,10 @@ async fn reset_rotates_token_and_disconnects_clients() {
     };
 
     dtx.unwrap()
-        .send(ServerMsg::Reset { url: url.clone() })
+        .try_send(ServerMsg::Reset { url: url.clone() })
         .unwrap();
     for m in mtxs {
-        m.send(ServerMsg::PeerLeft).unwrap();
+        m.try_send(ServerMsg::PeerLeft).unwrap();
     }
 
     let got = drx.recv().await.unwrap();
@@ -163,10 +163,11 @@ fn server_msg_serializes_with_type_tag() {
     let s = ServerMsg::Init {
         text: "hi".into(),
         locked: false,
+        files: vec![],
     };
     assert_eq!(
         serde_json::to_string(&s).unwrap(),
-        r#"{"type":"init","text":"hi","locked":false}"#
+        r#"{"type":"init","text":"hi","locked":false,"files":[]}"#
     );
 
     let s = ServerMsg::PeerJoined;
@@ -203,6 +204,12 @@ fn server_msg_serializes_with_type_tag() {
 
     let s = ServerMsg::Kicked;
     assert_eq!(serde_json::to_string(&s).unwrap(), r#"{"type":"kicked"}"#);
+
+    let s = ServerMsg::Pong { ts: 42 };
+    assert_eq!(
+        serde_json::to_string(&s).unwrap(),
+        r#"{"type":"pong","ts":42}"#
+    );
 }
 
 #[test]
@@ -225,4 +232,7 @@ fn client_msg_deserializes() {
 
     let m: ClientMsg = serde_json::from_str(r#"{"type":"ack"}"#).unwrap();
     assert!(matches!(m, ClientMsg::Ack));
+
+    let m: ClientMsg = serde_json::from_str(r#"{"type":"ping","ts":42}"#).unwrap();
+    assert!(matches!(m, ClientMsg::Ping { ts: 42 }));
 }

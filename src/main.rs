@@ -37,9 +37,12 @@ async fn main() {
     };
     let (lan_ip, candidates) = net::pick_lan_ip();
 
-    let token = { session.lock().await.token.clone() };
+    let (token, pin) = {
+        let s = session.lock().await;
+        (s.token.clone(), s.pin.clone())
+    };
     let desktop_url = format!("http://localhost:{}/?role=desktop&token={}", port, token);
-    let mobile_url = format!("http://{}:{}/?token={}", lan_ip, port, token);
+    let mobile_url = format!("http://{}:{}/", lan_ip, port);
 
     // PortPeek discovery: clear crash leftovers, then announce this session.
     manifest::sweep_stale();
@@ -64,16 +67,14 @@ async fn main() {
     }
 
     println!("ephe: session started");
-    println!("ephe: desktop: {}", desktop_url);
-    println!("ephe: mobile : {}", mobile_url);
+    println!("ephe: desktop : {}", desktop_url);
+    println!("ephe: mobile  : {}", mobile_url);
+    println!("ephe: pair pin: {}", pin);
     if candidates.len() > 1 {
         println!("ephe: other interfaces available:");
         for c in &candidates {
             if c.ip != lan_ip {
-                println!(
-                    "        {}  http://{}:{}/?token={}",
-                    c.name, c.ip, port, token
-                );
+                println!("        {}  http://{}:{}/", c.name, c.ip, port);
             }
         }
         println!("ephe: override with EPHE_IP=192.168.x.x if the phone is on a different network");

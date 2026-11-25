@@ -17,7 +17,7 @@ pub mod test_support {
         s: &mut Session,
         role: &str,
         token: &str,
-        tx: mpsc::UnboundedSender<ServerMsg>,
+        tx: mpsc::Sender<ServerMsg>,
     ) -> Result<(), &'static str> {
         if role == "desktop" {
             if s.desktop.is_some() {
@@ -49,8 +49,8 @@ pub mod test_support {
     pub fn on_disconnect_for(
         s: &mut Session,
         role: &str,
-        me: &mpsc::UnboundedSender<ServerMsg>,
-    ) -> Vec<mpsc::UnboundedSender<ServerMsg>> {
+        me: &mpsc::Sender<ServerMsg>,
+    ) -> Vec<mpsc::Sender<ServerMsg>> {
         if role == "desktop" {
             s.desktop = None;
         } else {
@@ -74,8 +74,8 @@ pub mod test_support {
         s: &mut Session,
         port: u16,
     ) -> (
-        Option<mpsc::UnboundedSender<ServerMsg>>,
-        Vec<mpsc::UnboundedSender<ServerMsg>>,
+        Option<mpsc::Sender<ServerMsg>>,
+        Vec<mpsc::Sender<ServerMsg>>,
         String,
     ) {
         let dtx = s.desktop.as_ref().map(|c| c.tx.clone());

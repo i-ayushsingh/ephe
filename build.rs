@@ -38,9 +38,21 @@ fn main() {
     if env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
         let mut res = winres::WindowsResource::new();
         res.set_icon(ico_path.to_str().expect("ico path utf-8"));
-        // ponytail: the same image doubles as the EXE's manifest icon at every
-        // requested DPI.
-        res.compile().expect("winres failed to embed icon");
+        res.set("FileDescription", "ephe - Ephemeral Local Text Pad");
+        res.set("ProductName", "ephe");
+        res.set("OriginalFilename", "ephe.exe");
+        res.set("InternalName", "ephe");
+        if env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("gnu") {
+            res.set_windres_path("windres.exe");
+        }
+        if let Err(e) = res.compile() {
+            println!("cargo:warning=winres icon embedding skipped: {e}");
+        } else {
+            let res_obj = PathBuf::from(&out_dir).join("resource.o");
+            if res_obj.exists() {
+                println!("cargo:rustc-link-arg={}", res_obj.display());
+            }
+        }
     }
 }
 

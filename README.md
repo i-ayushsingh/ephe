@@ -4,13 +4,13 @@
 
 **Temporary text pad between your computer and your phone. Local network only. Nothing saved. Nothing left behind.**
 
-Run `ephe.exe`, scan the QR with your phone, type together. Close the window — everything is gone.
+Run `ephe.exe`, scan the QR (or enter the 4-digit pairing PIN) on your phone, and type or drop files together. Close the window — everything is gone.
 
-Can't scan the QR? The mobile link is also shown as plain text on the desktop — click **copy link** and send it to the phone.
+Can't scan the QR? Enter the **4-digit PIN** shown under the QR code, or click **copy link** on the desktop to send the mobile URL.
 
-- **~900 KB single portable binary** — no install, no admin, no runtime
+- **Single portable binary** — no install, no admin, no runtime
 - **Local network only** — no cloud, no relay, no telemetry, no account
-- **In-memory only** — text lives in RAM; wiped on any disconnect
+- **In-memory only** — text and shared files (up to 25 MB) live strictly in RAM; wiped on session end
 - **One binary, one process** — opens your default browser, serves the phone page, runs the WebSocket
 - **MIT licensed**
 
@@ -41,26 +41,26 @@ That's it.
 
 | Variable | Effect |
 |---|---|
-| `EPHE_PORT=8080` | Bind to a specific port instead of the random 40000–50000 |
+| `EPHE_PORT=8080` | Bind to a specific port instead of the default `42380` (with `40000–50000` fallback) |
 | `EPHE_IP=192.168.x.x` | Force a specific LAN IP (if auto-detect picks a VPN/tunnel) |
 | `EPHE_NO_BROWSER=1` | Run as a server only — no browser opens |
 
 ## What it does
 
-- Starts a tiny HTTP + WebSocket server on a random local port
-- Detects the Wi-Fi IP, generates a QR code pointing at `http://<lan-ip>:<port>/?token=...`
+- Starts a tiny HTTP + WebSocket server on port `42380` (or random `40000–50000` fallback)
+- Detects the Wi-Fi IP (skipping virtual/VPN adapters), generates a QR code and a 4-digit pairing PIN
 - Opens your default browser at `http://localhost:<port>/?role=desktop&token=...`
-- Phone scans QR → connects → both sides have a shared textarea
+- Phone scans QR or enters the 4-digit PIN → connects → both sides share a synced pad and in-memory file drop (up to 25 MB total; executables blocked)
 - Up to two phones can connect to the same desktop session
-- Every keystroke syncs over WebSocket (~16ms debounce)
-- Either side disconnects → text wiped, session ends, server shuts down
+- Concurrent edits merge cleanly over WebSocket with live latency indicator
+- Session ends → text and files wiped from RAM
 
 ## What it does not do
 
 - ❌ No persistence — no disk writes, no history, no autosave
 - ❌ No network outside your LAN — no cloud, no telemetry, no analytics
 - ❌ No third-party API calls — phone + desktop only
-- ❌ No rich text, no formatting, no markdown, no images
+- ❌ No rich text, no formatting, no markdown
 - ❌ No account, no login, no sign-up
 - ✅ Up to **two phones** at a time (one desktop + two mobiles; a third is rejected)
 - ❌ No mobile app — phone is just a browser

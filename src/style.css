@@ -437,7 +437,19 @@ body.role-mobile .editor-panel { border-top: 0; }
   text-align: right;
 }
 
-/* mobile: bottom action bar — undo | copy | transform | paste | redo */
+/* tools drawer toggle is mobile/narrow-only */
+.tools-btn { display: none; }
+
+/* secure-context / LAN HTTP indicator */
+.ctx-badge {
+  font-size: var(--text-xs);
+  color: var(--faint);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* mobile: single-row primary footer + expandable tools drawer */
 body.role-mobile .footer { display: flex; }
 body.role-mobile .footer-hint,
 body.role-mobile .footer-count { display: none; }
@@ -449,9 +461,9 @@ body.role-mobile .footer-actions {
 body.role-mobile .btn-txt { display: none; }
 body.role-mobile .undo-btn,
 body.role-mobile .redo-btn {
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
-  padding: 8px 10px;
+  padding: 6px 10px;
 }
 
 /* copy & paste are primary on mobile */
@@ -464,41 +476,39 @@ body.role-mobile #paste-btn {
   font-weight: 500;
 }
 
-/* transform is secondary on mobile */
-body.role-mobile #transform-btn {
+body.role-mobile #clear-btn,
+body.role-mobile #tools-btn {
   font-size: var(--text-sm);
   padding: 8px 10px;
   border-color: var(--line-strong);
   color: var(--muted);
 }
 
-body.role-mobile #clear-btn,
-body.role-mobile #lines-btn,
-body.role-mobile #size-down-btn,
-body.role-mobile #size-up-btn,
-body.role-mobile #size-reset-btn,
-body.role-mobile #font-btn,
-body.role-mobile #wrap-btn,
-body.role-mobile #reset-btn { display: none; }
-
-/* desktop hides scan button */
-body.role-desktop #scan-btn { display: none; }
-
-/* mobile row order: undo | copy | transform | paste | redo */
-body.role-mobile #undo-btn { order: 1; }
-body.role-mobile #copy-btn { order: 2; }
-body.role-mobile #transform-btn { order: 3; }
-body.role-mobile #paste-btn { order: 4; }
-body.role-mobile #redo-btn { order: 5; }
-/* the shortcuts reference is desktop-only (mobile has no keyboard) */
-body.role-mobile #shortcuts-btn { display: none; }
-body.role-mobile:not(.session-ended) #scan-btn { display: none; }
-body.role-mobile.session-ended #scan-btn {
-  order: 3;
-  display: inline-flex;
-  border-color: var(--accent);
-  color: var(--accent);
+body.role-mobile .tools-btn { display: inline-flex; }
+body.role-mobile .footer-actions:not(.expanded) .footer-secondary { display: none; }
+body.role-mobile .footer-actions.expanded {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 6px;
 }
+body.role-mobile .footer-actions.expanded .footer-secondary:not([hidden]) {
+  display: inline-flex;
+  order: 10;
+}
+
+.tools-btn[aria-expanded="true"] {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+/* mobile row order: copy | paste | clear | tools | reset */
+body.role-mobile #copy-btn { order: 1; }
+body.role-mobile #paste-btn { order: 2; }
+body.role-mobile #clear-btn { order: 3; }
+body.role-mobile #tools-btn { order: 4; }
+body.role-mobile #reset-btn { order: 5; }
+/* the shortcuts reference is desktop-only (mobile has no keyboard) */
+body.role-mobile #shortcuts-btn { display: none !important; }
 
 .footer-hint kbd {
   font-family: var(--font-mono);
@@ -836,8 +846,31 @@ body.role-desktop .status[data-state="error"] ~ main .qr-card {
     padding-bottom: 10px;
   }
   .topbar-actions { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .ctx-badge { display: none; }
   .btn-sm { padding: 5px 8px; font-size: var(--text-xs); }
-  body.role-mobile .status .label { display: none; } /* hide text, keep dot */
+  .footer-hint,
+  .footer-count { display: none; }
+  .footer-actions {
+    flex: 1 1 0;
+    justify-content: space-between;
+    gap: var(--space-xs);
+  }
+  .tools-btn { display: inline-flex; }
+  .footer-actions:not(.expanded) .footer-secondary { display: none; }
+  .footer-actions.expanded {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .footer-actions.expanded .footer-secondary:not([hidden]) {
+    display: inline-flex;
+    order: 10;
+  }
+  #copy-btn { order: 1; }
+  #paste-btn { order: 2; }
+  #clear-btn { order: 3; }
+  #tools-btn { order: 4; }
+  #reset-btn { order: 5; }
   .qr-panel { padding: var(--space-md) var(--space-md) var(--space-md); }
   #editor {
     font-size: var(--text-lg); /* prevents iOS zoom on focus */
@@ -850,4 +883,170 @@ body.role-desktop .status[data-state="error"] ~ main .qr-card {
 @media (max-height: 520px) and (orientation: landscape) {
   .qr-panel { padding: var(--space-md) 0; }
   .qr-card { width: 140px; height: 140px; }
+}
+
+/* ---------- PIN Pairing Badge & Modal ---------- */
+
+.pin-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 14px;
+  background: var(--line);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+}
+
+.pin-title {
+  color: var(--muted);
+}
+
+.pin-code {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  font-size: var(--text-base);
+  color: var(--fg);
+}
+
+.pin-card {
+  text-align: center;
+  max-width: 320px;
+}
+
+.pin-input-wrap {
+  margin: 16px 0;
+}
+
+.pin-input {
+  width: 160px;
+  font-family: var(--font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-align: center;
+  padding: 8px 12px;
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  outline: none;
+  transition: border-color var(--duration) var(--easing);
+}
+
+.pin-input:focus {
+  border-color: var(--accent);
+}
+
+/* ---------- In-Memory Shared Files Bar ---------- */
+
+.files-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--line);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.files-bar-title {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.files-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  color: var(--fg);
+  text-decoration: none;
+  transition: border-color var(--duration) var(--easing);
+}
+
+.file-chip:hover {
+  border-color: var(--accent);
+}
+
+.file-chip-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.file-chip-size {
+  color: var(--muted);
+}
+
+.file-chip-del {
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--muted);
+  padding: 0 2px;
+  font-size: 11px;
+}
+
+.file-chip-del:hover {
+  color: var(--fg);
+}
+
+/* ---------- Drag and Drop Overlay ---------- */
+
+.editor-wrap {
+  position: relative;
+}
+
+.drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+}
+
+.drop-message {
+  padding: 16px 24px;
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: var(--text-base);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.iface-select {
+  margin-top: 8px;
+  max-width: 240px;
+  padding: 5px 10px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
 }
