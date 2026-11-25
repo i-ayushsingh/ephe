@@ -69,6 +69,15 @@ That's it.
 
 On the desktop, when the session ends (peer left, disconnected), a **"start new session"** button appears. Clicking it rotates the token and refreshes the QR. The phone has to re-scan — old URL is invalidated.
 
+## File sharing (in-memory)
+
+Drag & drop a file onto the editor or click the paperclip button (📎) to share files between connected devices.
+
+- **Size limit**: **25 MB** total across all active files in a session (stored strictly in RAM, never written to disk, and wiped on delete or session end).
+- **Allowed**: Any standard non-executable file — images (`.png`, `.jpg`, `.jpeg`, `.webp`, `.svg`, `.gif`), documents (`.pdf`, `.txt`, `.md`, `.csv`, `.json`, `.docx`), source/config files (`.rs`, `.py`, `.js`, `.ts`, `.html`, `.css`, `.yaml`), archives (`.zip`), audio/video, etc.
+- **Not allowed (blocked)**: Executable and script file types are rejected for safety:
+  `.exe`, `.bat`, `.cmd`, `.ps1`, `.scr`, `.vbs`, `.msi`, `.dll`, `.com`, `.pif`, `.hta`, `.cpl`, `.jar`
+
 ## Architecture
 
 ```
