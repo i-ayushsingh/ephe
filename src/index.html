@@ -34,11 +34,7 @@
       <div class="qr-card">
         <img id="qr" src="/qr" alt="QR code — scan with phone to connect" width="180" height="180" decoding="async">
       </div>
-      <p class="hint" id="caption">scan QR, then enter PIN</p>
-      <div class="pin-badge" id="pin-badge">
-        <span class="pin-title">pairing PIN:</span>
-        <span class="pin-code" id="pin-code">----</span>
-      </div>
+      <p class="hint" id="caption">scan to connect a phone</p>
       <select id="iface-select" class="iface-select" hidden aria-label="network interface"></select>
       <div class="url-row" id="url-row" hidden>
         <input id="url-text" class="url-text" type="text" readonly aria-label="mobile link">
@@ -94,20 +90,6 @@
       </footer>
     </section>
   </main>
-
-  <!-- 4-digit PIN Pairing Modal for Mobile -->
-  <div class="transform-panel" id="pin-panel" hidden>
-    <div class="transform-card pin-card" role="dialog" aria-modal="true" aria-labelledby="pin-title">
-      <h2 class="transform-title" id="pin-title">pair with computer</h2>
-      <p class="hint">enter the 4-digit PIN shown under the QR code on your computer</p>
-      <div class="pin-input-wrap">
-        <input type="text" id="pin-input" class="pin-input" maxlength="4" pattern="[0-9]*" inputmode="numeric" placeholder="••••" autocomplete="one-time-code">
-      </div>
-      <div class="modal-actions">
-        <button class="btn btn-sm" id="pin-submit" type="button">connect</button>
-      </div>
-    </div>
-  </div>
 
   <div class="transform-panel" id="shortcuts-panel" hidden>
     <div class="transform-card" role="dialog" aria-modal="true" aria-labelledby="shortcuts-title">

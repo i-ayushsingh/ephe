@@ -409,8 +409,6 @@ if (isDesktop && urlRow) {
       if (!data || !data.url) return;
       urlText.value = data.url;
       urlRow.hidden = false;
-      const pinCodeEl = document.getElementById("pin-code");
-      if (pinCodeEl && data.pin) pinCodeEl.textContent = data.pin;
       const ifaceSelect = document.getElementById("iface-select");
       const qrImg = document.getElementById("qr");
       if (ifaceSelect && Array.isArray(data.candidates) && data.candidates.length > 1) {
@@ -425,7 +423,7 @@ if (isDesktop && urlRow) {
         ifaceSelect.hidden = false;
         ifaceSelect.addEventListener("change", () => {
           const nextIp = ifaceSelect.value;
-          urlText.value = "http://" + nextIp + ":" + data.port + "/";
+          urlText.value = "http://" + nextIp + ":" + data.port + "/?token=" + encodeURIComponent(token);
           if (qrImg) qrImg.src = "/qr?ip=" + encodeURIComponent(nextIp);
         });
       }
@@ -610,10 +608,6 @@ let everJoined = false;
 let pingTimer = null;
 
 function connect() {
-  if (!token && !isDesktop) {
-    showPinModal();
-    return;
-  }
   const sock = new WebSocket(wsUrl);
   ws = sock;
   sock.addEventListener("open", () => {
@@ -1404,63 +1398,4 @@ if (editorWrap && dropOverlay) {
   });
 }
 
-// ---------- PIN Pairing Modal ----------
-
-function showPinModal() {
-  const pinPanel = document.getElementById("pin-panel");
-  const pinInput = document.getElementById("pin-input");
-  const pinSubmit = document.getElementById("pin-submit");
-  if (!pinPanel) return;
-  document.body.classList.remove("loading", "session-ended");
-  if (!pinPanel.hidden) return;
-  openModal(pinPanel, "#pin-input");
-  setStatus("idle", "enter pin");
-  if (pinPanel.dataset.bound) return;
-  pinPanel.dataset.bound = "1";
-
-  async function tryPin() {
-    const val = (pinInput ? pinInput.value : "").trim();
-    if (val.length !== 4) {
-      toast("enter 4 digits", "error");
-      return;
-    }
-    if (pinSubmit) {
-      pinSubmit.disabled = true;
-      pinSubmit.textContent = "pairing...";
-    }
-    try {
-      const res = await fetch("/pair?pin=" + encodeURIComponent(val));
-      if (!res.ok) throw new Error("invalid pin");
-      const data = await res.json();
-      const nextUrl = new URL(location.href);
-      nextUrl.searchParams.set("token", data.token);
-      location.href = nextUrl.toString();
-    } catch {
-      toast("invalid PIN", "error");
-      if (pinSubmit) {
-        pinSubmit.disabled = false;
-        pinSubmit.textContent = "connect";
-      }
-      if (pinInput) {
-        pinInput.value = "";
-        pinInput.focus();
-      }
-    }
-  }
-
-  if (pinSubmit) pinSubmit.addEventListener("click", tryPin);
-  if (pinInput) {
-    pinInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") tryPin();
-    });
-    pinInput.addEventListener("input", () => {
-      if (pinInput.value.length === 4) tryPin();
-    });
-  }
-}
-
-if (!token && !isDesktop) {
-  showPinModal();
-} else {
-  connect();
-}
+connect();

@@ -4,9 +4,9 @@
 
 **Temporary text pad between your computer and your phone. Local network only. Nothing saved. Nothing left behind.**
 
-Run `ephe.exe`, scan the QR (or enter the 4-digit pairing PIN) on your phone, and type or drop files together. Close the window — everything is gone.
+Run `ephe.exe`, scan the QR with your phone, and type or drop files together. Close the window — everything is gone.
 
-Can't scan the QR? Enter the **4-digit PIN** shown under the QR code, or click **copy link** on the desktop to send the mobile URL.
+Can't scan the QR? Click **copy link** on the desktop to send the mobile URL.
 
 - **Single portable binary** — no install, no admin, no runtime
 - **Local network only** — no cloud, no relay, no telemetry, no account
@@ -48,9 +48,9 @@ That's it.
 ## What it does
 
 - Starts a tiny HTTP + WebSocket server on port `42380` (or random `40000–50000` fallback)
-- Detects the Wi-Fi IP (skipping virtual/VPN adapters), generates a QR code and a 4-digit pairing PIN
+- Detects the Wi-Fi IP (skipping virtual/VPN adapters), generates a QR code pointing at `http://<lan-ip>:<port>/?token=...`
 - Opens your default browser at `http://localhost:<port>/?role=desktop&token=...`
-- Phone scans QR or enters the 4-digit PIN → connects → both sides share a synced pad and in-memory file drop (up to 25 MB total; executables blocked)
+- Phone scans QR → connects → both sides share a synced pad and in-memory file drop (up to 25 MB total; executables blocked)
 - Up to two phones can connect to the same desktop session
 - Concurrent edits merge cleanly over WebSocket with live latency indicator
 - Session ends → text and files wiped from RAM

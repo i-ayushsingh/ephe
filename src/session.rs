@@ -9,8 +9,6 @@ pub struct Session {
     /// stable per-process session id (PortPeek manifest filename)
     pub id: String,
     pub token: String,
-    /// 4-digit pairing PIN for easy manual pairing on mobile
-    pub pin: String,
     pub text: String,
     pub desktop: Option<Client>,
     pub mobiles: Vec<Client>,
@@ -121,11 +119,9 @@ pub enum ClientMsg {
 
 pub fn new_session() -> SharedSession {
     let token = random_token();
-    let pin = random_pin();
     Arc::new(Mutex::new(Session {
         id: random_id(),
         token,
-        pin,
         text: String::new(),
         desktop: None,
         mobiles: Vec::new(),
@@ -137,10 +133,6 @@ pub fn new_session() -> SharedSession {
 
 pub fn is_valid_token(session: &Session, token: &str) -> bool {
     constant_time_eq(session.token.as_bytes(), token.as_bytes())
-}
-
-pub fn is_valid_pin(session: &Session, pin: &str) -> bool {
-    constant_time_eq(session.pin.as_bytes(), pin.trim().as_bytes())
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -159,13 +151,6 @@ pub fn random_token() -> String {
     let mut rng = rand::rng();
     let bytes: [u8; 24] = rng.random();
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-pub fn random_pin() -> String {
-    use rand::Rng;
-    let mut rng = rand::rng();
-    let n: u32 = rng.random_range(1000..=9999);
-    format!("{:04}", n)
 }
 
 pub fn random_id() -> String {

@@ -21,8 +21,8 @@ use tokio::sync::mpsc;
 
 use crate::manifest;
 use crate::session::{
-    is_valid_pin, is_valid_token, random_id, random_token, Client, ClientMsg, DeviceInfo,
-    EphemeralFile, EphemeralFileMeta, ServerMsg, SharedSession, MAX_FILE_SIZE, MAX_MOBILES,
+    is_valid_token, random_id, random_token, Client, ClientMsg, DeviceInfo, EphemeralFile,
+    EphemeralFileMeta, ServerMsg, SharedSession, MAX_FILE_SIZE, MAX_MOBILES,
 };
 
 struct AppState {
@@ -53,7 +53,6 @@ pub fn build_router(session: SharedSession, port: u16, lan_ip: String) -> Router
         .route("/font.ttf", get(pixel_font))
         .route("/qr", get(qr))
         .route("/url", get(mobile_url))
-        .route("/pair", get(pair_pin))
         .route(
             "/upload",
             post(upload_file).layer(DefaultBodyLimit::max(MAX_FILE_SIZE + 4096)),
@@ -89,8 +88,7 @@ struct QrQuery {
     ip: Option<String>,
 }
 
-/// QR code points to the LAN base URL without embedding the session token,
-/// so mobile browsers must enter the 4-digit PIN after scanning.
+/// QR code points to the LAN URL with the session token embedded for 1-scan pairing.
 async fn qr(
     Query(q): Query<QrQuery>,
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
@@ -98,7 +96,8 @@ async fn qr(
     let ip =
         q.ip.filter(|candidate| crate::net::list_ips().iter().any(|c| &c.ip == candidate))
             .unwrap_or_else(|| state.lan_ip.clone());
-    let url = format!("http://{}:{}/", ip, state.port);
+    let token = state.session.lock().await.token.clone();
+    let url = format!("http://{}:{}/?token={}", ip, state.port, token);
     let code = match QrCode::new(url.as_bytes()) {
         Ok(c) => c,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -110,7 +109,7 @@ async fn qr(
     ([("content-type", "image/svg+xml")], svg).into_response()
 }
 
-/// The mobile URL, 4-digit pairing PIN, and available LAN interfaces.
+/// The mobile URL (with token) and available LAN interfaces.
 async fn mobile_url(
     Query(q): Query<WsQuery>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -122,40 +121,19 @@ async fn mobile_url(
     if !addr.ip().is_loopback() && !is_valid_token(&s, &token) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let url = format!("http://{}:{}/", state.lan_ip, state.port);
+    let url = format!("http://{}:{}/?token={}", state.lan_ip, state.port, s.token);
     let candidates: Vec<_> = crate::net::list_ips()
         .into_iter()
         .map(|c| serde_json::json!({ "name": c.name, "ip": c.ip }))
         .collect();
     let body = serde_json::json!({
         "url": url,
-        "pin": s.pin,
         "port": state.port,
         "ip": state.lan_ip,
         "candidates": candidates
     })
     .to_string();
     ([("content-type", "application/json")], body).into_response()
-}
-
-#[derive(Deserialize)]
-struct PinQuery {
-    pin: Option<String>,
-}
-
-/// Allows mobile devices to exchange the 4-digit PIN for the session token.
-async fn pair_pin(
-    Query(q): Query<PinQuery>,
-    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-) -> Response {
-    let pin = q.pin.unwrap_or_default();
-    let s = state.session.lock().await;
-    if is_valid_pin(&s, &pin) {
-        let body = serde_json::json!({ "token": s.token }).to_string();
-        ([("content-type", "application/json")], body).into_response()
-    } else {
-        (StatusCode::UNAUTHORIZED, "invalid pin").into_response()
-    }
 }
 
 const BLOCKED_EXTENSIONS: &[&str] = &[
@@ -357,7 +335,10 @@ async fn reset(
         "http://localhost:{}/?role=desktop&token={}",
         state.port, new_token
     );
-    let new_mobile_url = format!("http://{}:{}/", state.lan_ip, state.port);
+    let new_mobile_url = format!(
+        "http://{}:{}/?token={}",
+        state.lan_ip, state.port, new_token
+    );
 
     if let Some(c) = s.desktop.as_ref() {
         let _ = c.tx.try_send(ServerMsg::Reset {
@@ -375,13 +356,11 @@ async fn reset(
     s.text.clear();
     s.locked = false;
     s.token = new_token;
-    s.pin = crate::session::random_pin();
     s.disconnect_gen = s.disconnect_gen.wrapping_add(1);
 
     println!("ephe: session reset");
     println!("ephe: new desktop: {}", new_desktop_url);
     println!("ephe: new mobile : {}", new_mobile_url);
-    println!("ephe: new pair pin: {}", s.pin);
 
     let body = serde_json::json!({ "url": new_desktop_url }).to_string();
     ([("content-type", "application/json")], body).into_response()

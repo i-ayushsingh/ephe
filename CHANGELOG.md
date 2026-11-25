@@ -11,6 +11,19 @@ Categories:
 
 ---
 
+## v1.15.1
+
+### Error and bug fixes
+
+- **Removed PIN pairing system** — restored direct token-embedded QR codes (`/qr`) and mobile URLs (`/url`, CLI output, and session reset), fixing connection failures where mobile devices lacked a token on scan.
+- **Interface switcher token preservation** — switching LAN interfaces in the desktop dropdown preserves `?token=` in the mobile link.
+
+### Other
+
+- Version 1.15.1.
+
+---
+
 ## v1.15.0
 
 ### Features added
